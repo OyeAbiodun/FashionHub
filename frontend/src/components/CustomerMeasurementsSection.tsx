@@ -1,9 +1,11 @@
-import { ArrowRight, Plus, Ruler } from "lucide-react";
+import { ArrowRight, ArrowRightLeft, Plus, Ruler } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
+  Button,
   Card,
+  Dialog,
   EmptyState,
   InlineError,
   LoadingBlock,
@@ -11,8 +13,9 @@ import {
   StatusBadge,
   buttonStyles,
 } from "./ui";
-import { useCustomerMeasurements } from "../hooks/useMeasurements";
+import { useCustomerMeasurements, useMeasurementProfile } from "../hooks/useMeasurements";
 import { formatDate } from "../lib/date";
+import type { MeasurementValue } from "../types/measurement";
 
 export function CustomerMeasurementsSection({
   customerId,
@@ -20,25 +23,58 @@ export function CustomerMeasurementsSection({
   customerId: string;
 }) {
   const [archived, setArchived] = useState(false);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
+  const [compareProfileIdA, setCompareProfileIdA] = useState<string>("");
+  const [compareProfileIdB, setCompareProfileIdB] = useState<string>("");
+
   const query = useCustomerMeasurements(customerId, {
     page: 1,
-    page_size: 10,
+    page_size: 20,
     archived,
   });
   const items = query.data?.items ?? [];
+
+  const detailA = useMeasurementProfile(compareProfileIdA || undefined);
+  const detailB = useMeasurementProfile(compareProfileIdB || undefined);
+
+  const profileA = detailA.data;
+  const profileB = detailB.data;
+
+  function openComparison() {
+    if (items.length >= 2) {
+      setCompareProfileIdA(items[0].id);
+      setCompareProfileIdB(items[1].id);
+    } else if (items.length === 1) {
+      setCompareProfileIdA(items[0].id);
+      setCompareProfileIdB(items[0].id);
+    }
+    setCompareModalOpen(true);
+  }
 
   return (
     <Card className="p-5 sm:p-6">
       <SectionHeader
         title="Measurement Vault"
-        description="Sizing profiles and measurement history for this customer."
+        description="Sizing profiles and measurement history comparison for this customer."
         action={
-          <Link
-            className={buttonStyles({ size: "sm" })}
-            to={`/customers/${customerId}/measurements/new`}
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" /> Add Measurement
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {items.length >= 1 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={openComparison}
+              >
+                <ArrowRightLeft className="h-4 w-4" aria-hidden="true" /> Compare Sizing
+              </Button>
+            ) : null}
+            <Link
+              className={buttonStyles({ size: "sm" })}
+              to={`/customers/${customerId}/measurements/new`}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" /> Add Measurement
+            </Link>
+          </div>
         }
       />
       <label className="mt-4 inline-flex items-center gap-2 text-sm text-muted">
@@ -106,6 +142,114 @@ export function CustomerMeasurementsSection({
           </div>
         ) : null}
       </div>
+
+      {/* Side-by-Side Sizing Comparison Modal */}
+      {compareModalOpen ? (
+        <Dialog title="Side-by-Side Sizing Evolution" onClose={() => setCompareModalOpen(false)}>
+          <div className="space-y-5">
+            <p className="text-xs text-muted">
+              Compare customer measurement changes between recorded sizing sessions.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-slate-500 mb-1">
+                  Base Profile A
+                </label>
+                <select
+                  className="w-full rounded-lg border border-border bg-white p-2 text-sm text-ink"
+                  value={compareProfileIdA}
+                  onChange={(e) => setCompareProfileIdA(e.target.value)}
+                >
+                  {items.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({formatDate(p.recorded_at)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-slate-500 mb-1">
+                  Comparison Profile B
+                </label>
+                <select
+                  className="w-full rounded-lg border border-border bg-white p-2 text-sm text-ink"
+                  value={compareProfileIdB}
+                  onChange={(e) => setCompareProfileIdB(e.target.value)}
+                >
+                  {items.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({formatDate(p.recorded_at)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Comparison Matrix Table */}
+            {detailA.isLoading || detailB.isLoading ? (
+              <LoadingBlock label="Loading sizing profiles for comparison" />
+            ) : profileA ? (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-border bg-slate-50 font-semibold text-slate-600">
+                    <tr>
+                      <th className="px-3 py-2.5">Measurement Field</th>
+                      <th className="px-3 py-2.5 text-right">{profileA.name} ({profileA.unit})</th>
+                      {profileB ? (
+                        <th className="px-3 py-2.5 text-right">{profileB.name} ({profileB.unit})</th>
+                      ) : null}
+                      {profileB && profileA.id !== profileB.id ? (
+                        <th className="px-3 py-2.5 text-right">Difference (B - A)</th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-white">
+                    {(profileA.values ?? []).map((valA: MeasurementValue) => {
+                      const valB = profileB?.values?.find((v: MeasurementValue) => v.field_key === valA.field_key);
+                      const numA = parseFloat(valA.value);
+                      const numB = valB ? parseFloat(valB.value) : NaN;
+                      const diff = !isNaN(numA) && !isNaN(numB) ? numB - numA : null;
+
+                      return (
+                        <tr key={valA.id}>
+                          <td className="px-3 py-2 font-medium text-ink">{valA.field_name}</td>
+                          <td className="px-3 py-2 text-right font-mono text-ink">
+                            {valA.value} {profileA.unit}
+                          </td>
+                          {profileB ? (
+                            <td className="px-3 py-2 text-right font-mono text-ink">
+                              {valB ? `${valB.value} ${profileB.unit}` : "-"}
+                            </td>
+                          ) : null}
+                          {profileB && profileA.id !== profileB.id ? (
+                            <td className="px-3 py-2 text-right font-mono font-semibold">
+                              {diff !== null ? (
+                                <span className={diff > 0 ? "text-emerald-700" : diff < 0 ? "text-amber-700" : "text-slate-400"}>
+                                  {diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)} {profileA.unit}
+                                </span>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <div className="flex justify-end pt-3 border-t border-border">
+              <Button variant="outline" onClick={() => setCompareModalOpen(false)}>
+                Close Comparison
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
     </Card>
   );
 }

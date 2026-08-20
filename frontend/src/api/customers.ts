@@ -52,3 +52,13 @@ export async function restoreCustomer(customerId: string): Promise<Customer> {
   );
   return response.data;
 }
+
+export async function fetchCustomerMeasurements(customerId: string) {
+  const response = await apiClient.get(`/customers/${customerId}/measurements`);
+  return response.data;
+}
+
+export async function fetchCustomerOrders(customerId: string) {
+  const response = await apiClient.get(`/customers/${customerId}/orders`);
+  return response.data;
+}

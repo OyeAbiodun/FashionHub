@@ -208,3 +208,43 @@ async def restore_customer(
         await session.commit()
         await session.refresh(customer)
     return customer
+
+
+async def list_customer_measurements(
+    session: AsyncSession, business: Business, customer_id: uuid.UUID
+):
+    from app.models.measurement import MeasurementProfile
+    from app.services.measurement_service import _load_profile
+
+    await get_customer(session, business, customer_id)
+    stmt = (
+        select(MeasurementProfile)
+        .where(
+            MeasurementProfile.business_id == business.id,
+            MeasurementProfile.customer_id == customer_id,
+        )
+        .order_by(MeasurementProfile.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    profiles = result.scalars().all()
+    return [await _load_profile(session, p) for p in profiles]
+
+
+async def list_customer_orders(
+    session: AsyncSession, business: Business, customer_id: uuid.UUID
+):
+    from app.models.order import Order
+    from app.services.order_service import _load_order, order_to_response
+
+    await get_customer(session, business, customer_id)
+    stmt = (
+        select(Order)
+        .where(
+            Order.business_id == business.id,
+            Order.customer_id == customer_id,
+        )
+        .order_by(Order.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    orders = result.scalars().all()
+    return [order_to_response(await _load_order(session, o.id)) for o in orders]

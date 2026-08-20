@@ -13,10 +13,14 @@ from app.schemas.customer import (
     CustomerResponse,
     CustomerUpdate,
 )
+from app.schemas.measurement import MeasurementProfilePublic
+from app.schemas.order import OrderPublic
 from app.services.customer_service import (
     archive_customer,
     create_customer,
     get_customer,
+    list_customer_measurements,
+    list_customer_orders,
     list_customers,
     restore_customer,
     update_customer,
@@ -53,6 +57,24 @@ async def get_customer_record(
     business: Annotated[Business, Depends(get_current_business)],
 ) -> CustomerResponse:
     return await get_customer(session, business, customer_id)
+
+
+@router.get("/{customer_id}/measurements", response_model=list[MeasurementProfilePublic])
+async def get_customer_measurements_record(
+    customer_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+) -> list[MeasurementProfilePublic]:
+    return await list_customer_measurements(session, business, customer_id)
+
+
+@router.get("/{customer_id}/orders", response_model=list[OrderPublic])
+async def get_customer_orders_record(
+    customer_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+) -> list[OrderPublic]:
+    return await list_customer_orders(session, business, customer_id)
 
 
 @router.patch("/{customer_id}", response_model=CustomerResponse)
