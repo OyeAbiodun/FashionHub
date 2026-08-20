@@ -91,7 +91,7 @@ async def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         ) from exc
     user = await get_user_by_id(session, user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not user.business.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
@@ -141,11 +141,8 @@ async def forgot_password(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ForgotPasswordResponse:
-    message, reset_token = await request_password_reset(session, payload.email, settings)
-    return ForgotPasswordResponse(
-        message=message,
-        reset_token=reset_token if settings.app_env.lower() == "development" else None,
-    )
+    message, _ = await request_password_reset(session, payload.email, settings)
+    return ForgotPasswordResponse(message=message)
 
 
 @router.post("/reset-password", response_model=MessageResponse)
@@ -156,4 +153,3 @@ async def reset_password(
 ) -> MessageResponse:
     await reset_password_with_token(session, payload.token, payload.new_password, settings)
     return MessageResponse(message="Password has been successfully reset.")
-

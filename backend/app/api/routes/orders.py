@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business, get_current_user
+from app.api.dependencies import get_current_business, get_current_user, require_feature_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.models.order import OrderStatus
@@ -28,7 +28,11 @@ from app.services.order_service import (
 router = APIRouter(tags=["orders"])
 
 
-@router.get("/orders", response_model=OrderListResponse)
+@router.get(
+    "/orders",
+    response_model=OrderListResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:read"))],
+)
 async def list_order_records(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
@@ -44,7 +48,12 @@ async def list_order_records(
     )
 
 
-@router.post("/orders", response_model=OrderDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/orders",
+    response_model=OrderDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("orders", "orders:write"))],
+)
 async def create_order_record(
     payload: OrderCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -55,7 +64,11 @@ async def create_order_record(
     return order_response(order, business)
 
 
-@router.get("/orders/{order_id}", response_model=OrderDetailResponse)
+@router.get(
+    "/orders/{order_id}",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:read"))],
+)
 async def get_order_record(
     order_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -65,7 +78,11 @@ async def get_order_record(
     return order_response(order, business)
 
 
-@router.patch("/orders/{order_id}", response_model=OrderDetailResponse)
+@router.patch(
+    "/orders/{order_id}",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:write"))],
+)
 async def update_order_record(
     order_id: uuid.UUID,
     payload: OrderUpdate,
@@ -76,7 +93,11 @@ async def update_order_record(
     return order_response(order, business)
 
 
-@router.post("/orders/{order_id}/status", response_model=OrderDetailResponse)
+@router.post(
+    "/orders/{order_id}/status",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:write"))],
+)
 async def update_order_status_record(
     order_id: uuid.UUID,
     payload: OrderStatusUpdate,
@@ -88,7 +109,11 @@ async def update_order_status_record(
     return order_response(order, business)
 
 
-@router.get("/customers/{customer_id}/orders", response_model=OrderListResponse)
+@router.get(
+    "/customers/{customer_id}/orders",
+    response_model=OrderListResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:read"))],
+)
 async def list_customer_order_records(
     customer_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],

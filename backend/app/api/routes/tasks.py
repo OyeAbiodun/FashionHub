@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business, get_current_user
+from app.api.dependencies import get_current_business, get_current_user, require_feature_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.models.task import TaskPriority, TaskStatus
@@ -18,7 +18,11 @@ from app.services.task_service import (
     update_task,
 )
 
-router = APIRouter(prefix="/tasks", tags=["tasks"])
+router = APIRouter(
+    prefix="/tasks",
+    tags=["tasks"],
+    dependencies=[Depends(require_feature_permission("tasks", "tasks:read"))],
+)
 
 
 @router.get("", response_model=TaskListResponse)
@@ -47,7 +51,12 @@ async def get_tasks(
     )
 
 
-@router.post("", response_model=TaskPublic, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=TaskPublic,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("tasks", "tasks:write"))],
+)
 async def add_task(
     payload: TaskCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -67,7 +76,11 @@ async def get_task(
     return await get_task_detail(session, business, task_id)
 
 
-@router.patch("/{task_id}", response_model=TaskPublic)
+@router.patch(
+    "/{task_id}",
+    response_model=TaskPublic,
+    dependencies=[Depends(require_feature_permission("tasks", "tasks:write"))],
+)
 async def edit_task(
     task_id: uuid.UUID,
     payload: TaskUpdate,
@@ -78,7 +91,11 @@ async def edit_task(
     return await update_task(session, business, task_id, payload)
 
 
-@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_feature_permission("tasks", "tasks:write"))],
+)
 async def remove_task(
     task_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],

@@ -12,7 +12,7 @@ Record the owner, timestamp, production URLs, database project/name, release `v0
 - [ ] `COOKIE_SAMESITE=lax` is used for same-site domains, or `none` is deliberately chosen for cross-site hosting with the trusted-origin protection verified.
 - [ ] Managed backup retention and restore owner are recorded; a fresh logical backup exists before migrating a database with data.
 - [ ] Pending migrations are reviewed, the production database reports the expected current revision, and one pre-deploy job runs `python -m alembic upgrade head` exactly once.
-- [ ] `python -m alembic current` reports `20260809_0007 (head)` and system measurement templates exist.
+- [ ] `python -m alembic current` reports `20260820_0012 (head)` and system measurement templates exist.
 - [ ] Provider health check targets `GET /api/v1/health` and returns app running/database reachable.
 - [ ] Backend tests, PostgreSQL integration tests, frontend tests, lint, type-check, production build, dependency checks, and high-severity audit are green.
 - [ ] Repository scan is clean: no secrets or production `.env`, database dumps, SQLite files, QA data, or local logs are deployed.

@@ -2,21 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.core.permissions import AVAILABLE_PERMISSIONS
 from app.models.user import UserRole
-
-AVAILABLE_PERMISSIONS = [
-  "customers:read",
-  "customers:write",
-  "measurements:read",
-  "measurements:write",
-  "orders:read",
-  "orders:write",
-  "invoices:read",
-  "invoices:write",
-  "reports:read",
-  "team:read",
-  "team:write",
-]
 
 
 class StaffPublic(BaseModel):
@@ -30,6 +17,7 @@ class StaffPublic(BaseModel):
   phone: str | None
   role: UserRole
   permissions: list[str] | None
+  custom_role_id: UUID | None
   is_active: bool
 
 
@@ -43,6 +31,7 @@ class StaffCreate(BaseModel):
   password: str = Field(min_length=8, max_length=128)
   role: UserRole = UserRole.STAFF
   permissions: list[str] | None = None
+  custom_role_id: UUID | None = None
 
   @field_validator("email")
   @classmethod
@@ -54,7 +43,7 @@ class StaffCreate(BaseModel):
   def validate_permissions(cls, value: list[str] | None) -> list[str] | None:
     if value is None:
       return None
-    valid_set = set(AVAILABLE_PERMISSIONS)
+    valid_set = AVAILABLE_PERMISSIONS
     for p in value:
       if p not in valid_set:
         raise ValueError(f"Invalid permission: {p}")
@@ -69,6 +58,7 @@ class StaffUpdate(BaseModel):
   phone: str | None = Field(default=None, max_length=40)
   role: UserRole | None = None
   permissions: list[str] | None = None
+  custom_role_id: UUID | None = None
   is_active: bool | None = None
 
   @field_validator("permissions")
@@ -76,7 +66,7 @@ class StaffUpdate(BaseModel):
   def validate_permissions(cls, value: list[str] | None) -> list[str] | None:
     if value is None:
       return None
-    valid_set = set(AVAILABLE_PERMISSIONS)
+    valid_set = AVAILABLE_PERMISSIONS
     for p in value:
       if p not in valid_set:
         raise ValueError(f"Invalid permission: {p}")

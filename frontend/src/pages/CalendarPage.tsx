@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
-  Filter,
   Ruler,
   ShoppingBag,
 } from "lucide-react";

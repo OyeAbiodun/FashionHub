@@ -1,13 +1,17 @@
 import uuid
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from secrets import token_urlsafe
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import create_token, hash_password, verify_password
 from app.models.business import Business
+from app.models.password_reset import PasswordResetToken
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.schemas.user import ChangePasswordRequest, UserUpdate
@@ -18,14 +22,18 @@ AUTH_ERROR = "Invalid email or password"
 
 async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
     result = await session.execute(
-        select(User).options(selectinload(User.business)).where(User.email == email.strip().lower())
+        select(User)
+        .options(selectinload(User.business), selectinload(User.custom_role))
+        .where(User.email == email.strip().lower())
     )
     return result.scalar_one_or_none()
 
 
 async def get_user_by_id(session: AsyncSession, user_id: uuid.UUID) -> User | None:
     result = await session.execute(
-        select(User).options(selectinload(User.business)).where(User.id == user_id)
+        select(User)
+        .options(selectinload(User.business), selectinload(User.custom_role))
+        .where(User.id == user_id)
     )
     return result.scalar_one_or_none()
 
@@ -73,7 +81,7 @@ async def authenticate_user(session: AsyncSession, payload: LoginRequest) -> Use
     user = await get_user_by_email(session, payload.email)
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=AUTH_ERROR)
-    if not user.is_active:
+    if not user.is_active or not user.business.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=AUTH_ERROR)
     return user
 
@@ -93,38 +101,55 @@ async def request_password_reset(
     generic_msg = (
         "If an account exists with this email, password reset instructions have been generated."
     )
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not user.business.is_active:
         return generic_msg, None
-    reset_token = create_token(str(user.id), settings=settings, token_kind="password_reset")
-    return generic_msg, reset_token
+    raw_token = token_urlsafe(32)
+    await session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+    session.add(
+        PasswordResetToken(
+            user_id=user.id,
+            token_hash=_hash_reset_token(raw_token),
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        )
+    )
+    await session.commit()
+    # Delivery is intentionally separate from token issuance. Tests call this service directly;
+    # HTTP responses never return the raw credential until a mail/SMS provider is integrated.
+    return generic_msg, raw_token
 
 
 async def reset_password_with_token(
     session: AsyncSession, token: str, new_password: str, settings
 ) -> None:
-    from app.core.security import decode_token
-
-    subject = decode_token(token, settings=settings, expected_kind="password_reset")
-    if subject is None:
+    now = datetime.now(UTC)
+    reset_record = (
+        await session.execute(
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == _hash_reset_token(token),
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > now,
+            )
+        )
+    ).scalar_one_or_none()
+    if reset_record is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired password reset token.",
         )
-    try:
-        user_id = uuid.UUID(subject)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired password reset token.",
-        ) from exc
-    user = await get_user_by_id(session, user_id)
-    if user is None or not user.is_active:
+    user = await get_user_by_id(session, reset_record.user_id)
+    if user is None or not user.is_active or not user.business.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired password reset token.",
         )
     user.password_hash = hash_password(new_password)
+    reset_record.used_at = now
+    await session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
     await session.commit()
+
+
+def _hash_reset_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
 
 
 async def update_user_profile(
@@ -151,5 +176,3 @@ async def change_user_password(
         )
     user.password_hash = hash_password(payload.new_password)
     await session.commit()
-
-

@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business
+from app.api.dependencies import get_current_business, require_feature_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.schemas.dashboard import (
@@ -22,7 +22,11 @@ from app.services.dashboard_service import (
     get_recent_payments,
 )
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+router = APIRouter(
+    prefix="/dashboard",
+    tags=["dashboard"],
+    dependencies=[Depends(require_feature_permission("reports", "reports:read"))],
+)
 
 
 @router.get("/summary", response_model=DashboardSummary)

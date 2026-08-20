@@ -46,6 +46,7 @@ const ALL_MODULES = [
   { key: "invoices", label: "Invoices & Payments" },
   { key: "reports", label: "Financial Reports & Dashboard" },
   { key: "team", label: "Team & Staff Management" },
+  { key: "tasks", label: "Tasks & Work Assignments" },
 ];
 
 export function SuperAdminPage() {

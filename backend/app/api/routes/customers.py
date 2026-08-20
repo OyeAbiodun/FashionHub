@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business
+from app.api.dependencies import get_current_business, require_feature_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.schemas.customer import (
@@ -13,14 +13,10 @@ from app.schemas.customer import (
     CustomerResponse,
     CustomerUpdate,
 )
-from app.schemas.measurement import MeasurementProfilePublic
-from app.schemas.order import OrderPublic
 from app.services.customer_service import (
     archive_customer,
     create_customer,
     get_customer,
-    list_customer_measurements,
-    list_customer_orders,
     list_customers,
     restore_customer,
     update_customer,
@@ -29,7 +25,11 @@ from app.services.customer_service import (
 router = APIRouter(prefix="/customers", tags=["customers"])
 
 
-@router.get("", response_model=CustomerListResponse)
+@router.get(
+    "",
+    response_model=CustomerListResponse,
+    dependencies=[Depends(require_feature_permission("customers", "customers:read"))],
+)
 async def list_customer_records(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
@@ -41,7 +41,12 @@ async def list_customer_records(
     return await list_customers(session, business, search, page, page_size, archived)
 
 
-@router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=CustomerResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("customers", "customers:write"))],
+)
 async def create_customer_record(
     payload: CustomerCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -50,7 +55,11 @@ async def create_customer_record(
     return await create_customer(session, business, payload)
 
 
-@router.get("/{customer_id}", response_model=CustomerResponse)
+@router.get(
+    "/{customer_id}",
+    response_model=CustomerResponse,
+    dependencies=[Depends(require_feature_permission("customers", "customers:read"))],
+)
 async def get_customer_record(
     customer_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -59,25 +68,11 @@ async def get_customer_record(
     return await get_customer(session, business, customer_id)
 
 
-@router.get("/{customer_id}/measurements", response_model=list[MeasurementProfilePublic])
-async def get_customer_measurements_record(
-    customer_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    business: Annotated[Business, Depends(get_current_business)],
-) -> list[MeasurementProfilePublic]:
-    return await list_customer_measurements(session, business, customer_id)
-
-
-@router.get("/{customer_id}/orders", response_model=list[OrderPublic])
-async def get_customer_orders_record(
-    customer_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    business: Annotated[Business, Depends(get_current_business)],
-) -> list[OrderPublic]:
-    return await list_customer_orders(session, business, customer_id)
-
-
-@router.patch("/{customer_id}", response_model=CustomerResponse)
+@router.patch(
+    "/{customer_id}",
+    response_model=CustomerResponse,
+    dependencies=[Depends(require_feature_permission("customers", "customers:write"))],
+)
 async def update_customer_record(
     customer_id: uuid.UUID,
     payload: CustomerUpdate,
@@ -87,7 +82,11 @@ async def update_customer_record(
     return await update_customer(session, business, customer_id, payload)
 
 
-@router.post("/{customer_id}/archive", response_model=CustomerResponse)
+@router.post(
+    "/{customer_id}/archive",
+    response_model=CustomerResponse,
+    dependencies=[Depends(require_feature_permission("customers", "customers:write"))],
+)
 async def archive_customer_record(
     customer_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -96,7 +95,11 @@ async def archive_customer_record(
     return await archive_customer(session, business, customer_id)
 
 
-@router.post("/{customer_id}/restore", response_model=CustomerResponse)
+@router.post(
+    "/{customer_id}/restore",
+    response_model=CustomerResponse,
+    dependencies=[Depends(require_feature_permission("customers", "customers:write"))],
+)
 async def restore_customer_record(
     customer_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],

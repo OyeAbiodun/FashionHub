@@ -1,7 +1,9 @@
 import asyncio
+import os
 import uuid
+
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.security import hash_password
 from app.models.base import Base
@@ -9,6 +11,14 @@ from app.models.business import Business
 from app.models.user import User, UserRole
 
 DATABASE_URL = "sqlite+aiosqlite:///./fashionos.db"
+
+
+def seed_password() -> str:
+    value = os.environ.get("SEED_ADMIN_PASSWORD")
+    if not value:
+        raise RuntimeError("Set SEED_ADMIN_PASSWORD before running this development-only script.")
+    return value
+
 
 async def seed():
     engine = create_async_engine(DATABASE_URL)
@@ -22,14 +32,14 @@ async def seed():
         res = await session.execute(select(User).where(User.email == "textabi12@gmail.com"))
         existing_user = res.scalar_one_or_none()
 
-        target_password = "FashionOS2026!"
+        target_password = seed_password()
         password_hash = hash_password(target_password)
 
         if existing_user:
             existing_user.password_hash = password_hash
             existing_user.role = UserRole.SUPER_ADMIN
             await session.commit()
-            print(f"Updated password and SUPER_ADMIN role for textabi12@gmail.com -> Password: {target_password}")
+            print("Updated SUPER_ADMIN development account.")
         else:
             # Create Business
             business = Business(
@@ -39,7 +49,16 @@ async def seed():
                 email="textabi12@gmail.com",
                 currency="NGN",
                 timezone="Africa/Lagos",
-                enabled_features=["customers", "measurements", "templates", "orders", "invoices", "reports", "team"],
+                enabled_features=[
+                    "customers",
+                    "measurements",
+                    "templates",
+                    "orders",
+                    "invoices",
+                    "reports",
+                    "team",
+                    "tasks",
+                ],
                 max_staff_users=50,
                 is_active=True
             )
@@ -60,7 +79,7 @@ async def seed():
             )
             session.add(user)
             await session.commit()
-            print(f"Successfully created account textabi12@gmail.com with password: {target_password} (SUPER_ADMIN)")
+            print("Created SUPER_ADMIN development account.")
 
     await engine.dispose()
 

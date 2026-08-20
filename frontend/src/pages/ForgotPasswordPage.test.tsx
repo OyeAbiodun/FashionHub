@@ -16,7 +16,6 @@ test("forgot password form validation and submission", async () => {
   // Mock successful API response
   const forgotPasswordSpy = vi.spyOn(authApi, "forgotPassword").mockResolvedValueOnce({
     message: "If an account exists with this email, password reset instructions have been generated.",
-    reset_token: "mock-reset-token",
   });
 
   const emailInput = screen.getByLabelText(/registered email/i);
@@ -25,5 +24,5 @@ test("forgot password form validation and submission", async () => {
 
   expect(forgotPasswordSpy).toHaveBeenCalledWith("owner@example.com");
   expect(await screen.findByText(/password reset instructions have been generated/i)).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /reset password now/i })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /reset password now/i })).not.toBeInTheDocument();
 });

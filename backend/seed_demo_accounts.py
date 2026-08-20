@@ -1,17 +1,28 @@
 import asyncio
+import os
 import uuid
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+import app.models  # noqa: F401
 from app.core.security import hash_password
 from app.models.base import Base
 from app.models.business import Business
 from app.models.user import User, UserRole
-import app.models  # noqa: F401
 
 DATABASE_URL = "sqlite+aiosqlite:///./fashionos.db"
 
+
+def seed_password() -> str:
+    value = os.environ.get("SEED_DEMO_PASSWORD")
+    if not value:
+        raise RuntimeError("Set SEED_DEMO_PASSWORD before running this development-only script.")
+    return value
+
+
 async def seed_demo():
+    password = seed_password()
     engine = create_async_engine(DATABASE_URL)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -30,7 +41,16 @@ async def seed_demo():
                 email=sa_email,
                 currency="NGN",
                 timezone="Africa/Lagos",
-                enabled_features=["customers", "measurements", "templates", "orders", "invoices", "reports", "team"],
+                enabled_features=[
+                    "customers",
+                    "measurements",
+                    "templates",
+                    "orders",
+                    "invoices",
+                    "reports",
+                    "team",
+                    "tasks",
+                ],
                 max_staff_users=100,
                 is_active=True
             )
@@ -44,7 +64,7 @@ async def seed_demo():
                 last_name="Admin",
                 email=sa_email,
                 phone="+2348000000099",
-                password_hash=hash_password("SuperSecretPass123!"),
+                password_hash=hash_password(password),
                 role=UserRole.SUPER_ADMIN,
                 is_active=True
             )
@@ -61,7 +81,16 @@ async def seed_demo():
                 email=owner_email,
                 currency="NGN",
                 timezone="Africa/Lagos",
-                enabled_features=["customers", "measurements", "templates", "orders", "invoices", "reports", "team"],
+                enabled_features=[
+                    "customers",
+                    "measurements",
+                    "templates",
+                    "orders",
+                    "invoices",
+                    "reports",
+                    "team",
+                    "tasks",
+                ],
                 max_staff_users=15,
                 is_active=True
             )
@@ -75,7 +104,7 @@ async def seed_demo():
                 last_name="Okafor",
                 email=owner_email,
                 phone="+2348011112222",
-                password_hash=hash_password("StrongPass123!"),
+                password_hash=hash_password(password),
                 role=UserRole.BUSINESS_ADMIN,
                 is_active=True
             )
@@ -89,9 +118,12 @@ async def seed_demo():
                 last_name="Tailor",
                 email="tailor@lagosbespoke.ng",
                 phone="+2348033334444",
-                password_hash=hash_password("StaffSecret123!"),
+                password_hash=hash_password(password),
                 role=UserRole.STAFF,
-                permissions=["customers:read", "customers:write", "measurements:read", "measurements:write", "orders:read", "orders:write"],
+                permissions=[
+                    "customers:read", "customers:write", "measurements:read", "measurements:write",
+                    "orders:read", "orders:write",
+                ],
                 is_active=True
             )
             session.add(u_staff)
@@ -107,7 +139,16 @@ async def seed_demo():
                 email=custom_email,
                 currency="NGN",
                 timezone="Africa/Lagos",
-                enabled_features=["customers", "measurements", "templates", "orders", "invoices", "reports", "team"],
+                enabled_features=[
+                    "customers",
+                    "measurements",
+                    "templates",
+                    "orders",
+                    "invoices",
+                    "reports",
+                    "team",
+                    "tasks",
+                ],
                 max_staff_users=20,
                 is_active=True
             )
@@ -121,7 +162,7 @@ async def seed_demo():
                 last_name="Admin",
                 email=custom_email,
                 phone="+2348099887766",
-                password_hash=hash_password("FashionOS2026!"),
+                password_hash=hash_password(password),
                 role=UserRole.SUPER_ADMIN,
                 is_active=True
             )

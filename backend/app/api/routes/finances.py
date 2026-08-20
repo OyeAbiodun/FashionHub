@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business, get_current_user
+from app.api.dependencies import get_current_business, get_current_user, require_feature_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.models.user import User
@@ -33,6 +33,7 @@ router = APIRouter(tags=["payments", "invoices"])
     "/orders/{order_id}/payments",
     response_model=PaymentResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("invoices", "invoices:write"))],
 )
 async def record_order_payment(
     order_id: uuid.UUID,
@@ -45,7 +46,11 @@ async def record_order_payment(
     return payment_response(payment)
 
 
-@router.get("/orders/{order_id}/payments", response_model=list[PaymentResponse])
+@router.get(
+    "/orders/{order_id}/payments",
+    response_model=list[PaymentResponse],
+    dependencies=[Depends(require_feature_permission("invoices", "invoices:read"))],
+)
 async def list_order_payment_records(
     order_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -54,7 +59,11 @@ async def list_order_payment_records(
     return await list_order_payments(session, business, order_id)
 
 
-@router.get("/customers/{customer_id}/payments", response_model=PaymentListResponse)
+@router.get(
+    "/customers/{customer_id}/payments",
+    response_model=PaymentListResponse,
+    dependencies=[Depends(require_feature_permission("invoices", "invoices:read"))],
+)
 async def list_customer_payment_records(
     customer_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -69,6 +78,7 @@ async def list_customer_payment_records(
     "/orders/{order_id}/invoice",
     response_model=InvoiceResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("invoices", "invoices:write"))],
 )
 async def create_order_invoice(
     order_id: uuid.UUID,
@@ -81,7 +91,11 @@ async def create_order_invoice(
     return invoice_response(invoice)
 
 
-@router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
+@router.get(
+    "/invoices/{invoice_id}",
+    response_model=InvoiceResponse,
+    dependencies=[Depends(require_feature_permission("invoices", "invoices:read"))],
+)
 async def get_invoice_record(
     invoice_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -90,7 +104,11 @@ async def get_invoice_record(
     return invoice_response(await get_invoice(session, business, invoice_id))
 
 
-@router.get("/orders/{order_id}/invoice", response_model=InvoiceResponse)
+@router.get(
+    "/orders/{order_id}/invoice",
+    response_model=InvoiceResponse,
+    dependencies=[Depends(require_feature_permission("invoices", "invoices:read"))],
+)
 async def get_order_invoice_record(
     order_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],

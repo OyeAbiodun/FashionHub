@@ -4,7 +4,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business, get_current_user
+from app.api.dependencies import (
+    get_current_business,
+    get_current_user,
+    require_feature,
+    require_tenant_admin,
+)
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.models.user import User
@@ -15,7 +20,11 @@ from app.services.team_service import (
     update_staff_member,
 )
 
-router = APIRouter(prefix="/team", tags=["team"])
+router = APIRouter(
+    prefix="/team",
+    tags=["team"],
+    dependencies=[Depends(require_feature("team")), Depends(require_tenant_admin)],
+)
 
 
 @router.get("", response_model=list[StaffPublic])
@@ -34,7 +43,7 @@ async def add_staff(
     business: Annotated[Business, Depends(get_current_business)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StaffPublic:
-    return await create_staff_member(session, business, payload)
+    return await create_staff_member(session, business, current_user, payload)
 
 
 @router.patch("/{user_id}", response_model=StaffPublic)
@@ -45,4 +54,4 @@ async def update_staff(
     business: Annotated[Business, Depends(get_current_business)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StaffPublic:
-    return await update_staff_member(session, business, user_id, payload)
+    return await update_staff_member(session, business, current_user, user_id, payload)

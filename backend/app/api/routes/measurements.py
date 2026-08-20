@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business, get_current_user
+from app.api.dependencies import get_current_business, get_current_user, require_feature_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.models.user import User
@@ -36,7 +36,11 @@ from app.services.measurement_service import (
 router = APIRouter(tags=["measurements"])
 
 
-@router.get("/measurement-profiles", response_model=GlobalMeasurementProfileListResponse)
+@router.get(
+    "/measurement-profiles",
+    response_model=GlobalMeasurementProfileListResponse,
+    dependencies=[Depends(require_feature_permission("measurements", "measurements:read"))],
+)
 async def list_global_measurement_profiles(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
@@ -51,7 +55,11 @@ async def list_global_measurement_profiles(
     )
 
 
-@router.get("/measurement-templates", response_model=list[MeasurementTemplateListItem])
+@router.get(
+    "/measurement-templates",
+    response_model=list[MeasurementTemplateListItem],
+    dependencies=[Depends(require_feature_permission("templates", "measurements:read"))],
+)
 async def list_measurement_templates(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
@@ -59,7 +67,11 @@ async def list_measurement_templates(
     return await list_templates(session, business)
 
 
-@router.get("/measurement-templates/{template_id}", response_model=MeasurementTemplateResponse)
+@router.get(
+    "/measurement-templates/{template_id}",
+    response_model=MeasurementTemplateResponse,
+    dependencies=[Depends(require_feature_permission("templates", "measurements:read"))],
+)
 async def get_measurement_template(
     template_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -72,6 +84,7 @@ async def get_measurement_template(
     "/measurement-templates",
     response_model=MeasurementTemplateResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("templates", "measurements:write"))],
 )
 async def create_measurement_template(
     payload: MeasurementTemplateCreate,
@@ -81,7 +94,11 @@ async def create_measurement_template(
     return await create_template(session, business, payload)
 
 
-@router.patch("/measurement-templates/{template_id}", response_model=MeasurementTemplateResponse)
+@router.patch(
+    "/measurement-templates/{template_id}",
+    response_model=MeasurementTemplateResponse,
+    dependencies=[Depends(require_feature_permission("templates", "measurements:write"))],
+)
 async def update_measurement_template(
     template_id: uuid.UUID,
     payload: MeasurementTemplateUpdate,
@@ -91,7 +108,11 @@ async def update_measurement_template(
     return await update_template(session, business, template_id, payload)
 
 
-@router.delete("/measurement-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/measurement-templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_feature_permission("templates", "measurements:write"))],
+)
 async def delete_measurement_template(
     template_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -103,6 +124,7 @@ async def delete_measurement_template(
 @router.get(
     "/customers/{customer_id}/measurements",
     response_model=MeasurementProfileListResponse,
+    dependencies=[Depends(require_feature_permission("measurements", "measurements:read"))],
 )
 async def list_customer_measurements(
     customer_id: uuid.UUID,
@@ -121,6 +143,7 @@ async def list_customer_measurements(
     "/customers/{customer_id}/measurements",
     response_model=MeasurementProfileResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("measurements", "measurements:write"))],
 )
 async def create_customer_measurement(
     customer_id: uuid.UUID,
@@ -135,7 +158,11 @@ async def create_customer_measurement(
     return profile_response(profile)
 
 
-@router.get("/measurement-profiles/{profile_id}", response_model=MeasurementProfileResponse)
+@router.get(
+    "/measurement-profiles/{profile_id}",
+    response_model=MeasurementProfileResponse,
+    dependencies=[Depends(require_feature_permission("measurements", "measurements:read"))],
+)
 async def get_measurement_profile_record(
     profile_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -146,7 +173,9 @@ async def get_measurement_profile_record(
 
 
 @router.post(
-    "/measurement-profiles/{profile_id}/archive", response_model=MeasurementProfileResponse
+    "/measurement-profiles/{profile_id}/archive",
+    response_model=MeasurementProfileResponse,
+    dependencies=[Depends(require_feature_permission("measurements", "measurements:write"))],
 )
 async def archive_measurement_profile_record(
     profile_id: uuid.UUID,
@@ -158,7 +187,9 @@ async def archive_measurement_profile_record(
 
 
 @router.post(
-    "/measurement-profiles/{profile_id}/restore", response_model=MeasurementProfileResponse
+    "/measurement-profiles/{profile_id}/restore",
+    response_model=MeasurementProfileResponse,
+    dependencies=[Depends(require_feature_permission("measurements", "measurements:write"))],
 )
 async def restore_measurement_profile_record(
     profile_id: uuid.UUID,

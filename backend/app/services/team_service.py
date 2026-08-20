@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.business import Business
-from app.models.user import User
+from app.models.role import Role
+from app.models.user import User, UserRole
 from app.schemas.team import StaffCreate, StaffPublic, StaffUpdate
 
 
@@ -21,7 +22,7 @@ async def list_team_members(session: AsyncSession, business: Business) -> list[S
 
 
 async def create_staff_member(
-    session: AsyncSession, business: Business, payload: StaffCreate
+    session: AsyncSession, business: Business, actor: User, payload: StaffCreate
 ) -> StaffPublic:
     # Check max_staff_users limit
     count_stmt = select(func.count(User.id)).where(User.business_id == business.id)
@@ -44,6 +45,8 @@ async def create_staff_member(
             detail="An account with this email address already exists.",
         )
 
+    _validate_team_role_assignment(actor, payload.role)
+    custom_role = await _validate_custom_role(session, business, payload.custom_role_id)
     user = User(
         business_id=business.id,
         first_name=payload.first_name.strip(),
@@ -53,6 +56,7 @@ async def create_staff_member(
         password_hash=hash_password(payload.password),
         role=payload.role,
         permissions=payload.permissions,
+        custom_role_id=custom_role.id if custom_role else None,
         is_active=True,
     )
     session.add(user)
@@ -62,7 +66,11 @@ async def create_staff_member(
 
 
 async def update_staff_member(
-    session: AsyncSession, business: Business, user_id: uuid.UUID, payload: StaffUpdate
+    session: AsyncSession,
+    business: Business,
+    actor: User,
+    user_id: uuid.UUID,
+    payload: StaffUpdate,
 ) -> StaffPublic:
     stmt = select(User).where(User.id == user_id, User.business_id == business.id)
     user = (await session.execute(stmt)).scalar_one_or_none()
@@ -70,6 +78,11 @@ async def update_staff_member(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found"
         )
+
+    _validate_target_modification(actor, user)
+    if payload.role is not None:
+        _validate_team_role_assignment(actor, payload.role)
+    custom_role = await _validate_custom_role(session, business, payload.custom_role_id)
 
     if payload.first_name is not None:
         user.first_name = payload.first_name.strip()
@@ -81,9 +94,52 @@ async def update_staff_member(
         user.role = payload.role
     if payload.permissions is not None:
         user.permissions = payload.permissions
+    if "custom_role_id" in payload.model_fields_set:
+        user.custom_role_id = custom_role.id if custom_role else None
     if payload.is_active is not None:
         user.is_active = payload.is_active
 
     await session.commit()
     await session.refresh(user)
     return StaffPublic.model_validate(user)
+
+
+def _validate_team_role_assignment(actor: User, requested_role: UserRole) -> None:
+    if requested_role not in {UserRole.STAFF, UserRole.BUSINESS_ADMIN}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Team management cannot assign owner or Super Admin privileges.",
+        )
+    if actor.role == UserRole.BUSINESS_ADMIN and requested_role != UserRole.STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Business admins can only manage staff accounts.",
+        )
+
+
+def _validate_target_modification(actor: User, target: User) -> None:
+    if target.role in {UserRole.OWNER, UserRole.SUPER_ADMIN}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Privileged accounts cannot be modified through tenant team management.",
+        )
+    if actor.role == UserRole.BUSINESS_ADMIN and target.role != UserRole.STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Business admins can only manage staff accounts.",
+        )
+
+
+async def _validate_custom_role(
+    session: AsyncSession, business: Business, custom_role_id: uuid.UUID | None
+) -> Role | None:
+    if custom_role_id is None:
+        return None
+    role = (
+        await session.execute(
+            select(Role).where(Role.id == custom_role_id, Role.business_id == business.id)
+        )
+    ).scalar_one_or_none()
+    if role is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Custom role not found")
+    return role

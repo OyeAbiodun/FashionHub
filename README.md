@@ -64,6 +64,12 @@ The integration fixture refuses to run unless `current_database()` is exactly `f
 - Archiving a customer sets `archived_at` and preserves the row. Archived customers are excluded from default lists and can be queried with `archived=true`.
 - Customer list responses use `{ items, page, page_size, total, total_pages }`; `page_size` is capped at 100.
 
+## Password resets
+
+- Reset credentials are random, hashed at rest, expire after 15 minutes, and are invalidated after use.
+- The forgot-password API always returns the same generic response and never returns a usable reset token.
+- A production email or SMS delivery adapter must be configured to deliver the transient reset link/token to users; FashionOS intentionally does not include a provider in this release.
+
 ## Orders and Production
 - Order numbers are generated per business from `order_counters`, producing references like `ORD-000001`; clients never submit `order_number`.
 - New orders default to `CONFIRMED` and must include at least one garment item.
@@ -206,7 +212,7 @@ python -m alembic upgrade head
 python -m alembic current
 ```
 
-The final command must report `20260809_0007 (head)`. On a first empty database, running base-to-head creates the schema and system measurement templates. Confirm `/api/v1/health` returns `{"status":"ok","database":"reachable"}` after the API starts. Do not use `stamp head`, run downgrades automatically, or run the PostgreSQL concurrency suite against production.
+The final command must report `20260820_0012 (head)`. On a first empty database, running base-to-head creates the schema and system measurement templates. Confirm `/api/v1/health` returns `{"status":"ok","database":"reachable"}` after the API starts. Do not use `stamp head`, run downgrades automatically, or run the PostgreSQL concurrency suite against production.
 
 ### Cookies, CORS, HTTPS, and errors
 

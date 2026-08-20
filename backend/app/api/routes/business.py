@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_business
+from app.api.dependencies import get_current_business, require_permission
 from app.core.database import get_db_session
 from app.models.business import Business
 from app.schemas.business import BusinessPublic, BusinessUpdate
@@ -19,7 +19,11 @@ async def get_business_settings(
     return BusinessPublic.model_validate(business)
 
 
-@router.patch("", response_model=BusinessPublic)
+@router.patch(
+    "",
+    response_model=BusinessPublic,
+    dependencies=[Depends(require_permission("business:settings"))],
+)
 async def patch_business_settings(
     payload: BusinessUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],

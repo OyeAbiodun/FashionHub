@@ -12,7 +12,6 @@ import { forgotPasswordSchema, type ForgotPasswordFormValues } from "../lib/vali
 export function ForgotPasswordPage() {
   const [apiError, setApiError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [devResetToken, setDevResetToken] = useState<string | null>(null);
 
   const {
     register,
@@ -25,13 +24,9 @@ export function ForgotPasswordPage() {
   async function onSubmit(values: ForgotPasswordFormValues) {
     setApiError("");
     setSuccessMessage("");
-    setDevResetToken(null);
     try {
       const res = await forgotPassword(values.email);
       setSuccessMessage(res.message);
-      if (res.reset_token) {
-        setDevResetToken(res.reset_token);
-      }
     } catch (error) {
       setApiError(getApiErrorMessage(error));
     }
@@ -63,23 +58,6 @@ export function ForgotPasswordPage() {
               </p>
             </div>
           </div>
-          {devResetToken ? (
-            <div className="pt-3 border-t border-emerald-200">
-              <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wider">
-                Development Quick Reset Link
-              </p>
-              <Link
-                to={`/reset-password?token=${encodeURIComponent(devResetToken)}`}
-                className={buttonStyles({
-                  size: "sm",
-                  variant: "outline",
-                  className: "mt-2 text-xs bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-100",
-                })}
-              >
-                Reset Password Now (Local Test)
-              </Link>
-            </div>
-          ) : null}
         </div>
       ) : (
         <form className="mt-8 space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>

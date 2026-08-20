@@ -22,6 +22,7 @@ DEFAULT_BUSINESS_FEATURES = [
     "invoices",
     "reports",
     "team",
+    "tasks",
 ]
 
 

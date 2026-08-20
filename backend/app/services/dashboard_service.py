@@ -14,6 +14,8 @@ from app.schemas.dashboard import (
     DashboardAlert,
     DashboardAlertSeverity,
     DashboardAlertType,
+    DashboardCalendarEvent,
+    DashboardCalendarEventType,
     DashboardOrderItem,
     DashboardPaymentItem,
     DashboardSummary,
@@ -329,7 +331,6 @@ async def get_calendar_events(
     session: AsyncSession, business: Business, year: int, month: int
 ) -> list[DashboardCalendarEvent]:
     from app.models.task import Task
-    from app.schemas.dashboard import DashboardCalendarEvent, DashboardCalendarEventType
 
     # Fetch orders due in the specified month/year range
     orders_stmt = (

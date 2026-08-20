@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CheckSquare,
   Clock,
-  Filter,
   Loader2,
   Plus,
   Search,
@@ -23,7 +22,6 @@ import {
   deleteTask,
   fetchTasks,
   updateTask,
-  type TaskItem,
   type TaskPriority,
   type TaskStatus,
 } from "../api/tasks";

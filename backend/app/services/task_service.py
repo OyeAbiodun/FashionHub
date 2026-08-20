@@ -6,6 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.business import Business
+from app.models.customer import Customer
+from app.models.order import Order
 from app.models.task import Task, TaskPriority, TaskStatus
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskListResponse, TaskPublic, TaskUpdate
@@ -130,6 +132,8 @@ async def create_task(
             detail="Assigned staff member not found in your business workspace.",
         )
 
+    await _validate_task_references(session, business, payload.order_id, payload.customer_id)
+
     task = Task(
         business_id=business.id,
         title=payload.title.strip(),
@@ -183,6 +187,13 @@ async def update_task(
             )
         task.assigned_to_id = assignee.id
 
+    await _validate_task_references(
+        session,
+        business,
+        task.order_id,
+        task.customer_id,
+    )
+
     if payload.priority is not None:
         task.priority = payload.priority
 
@@ -209,3 +220,34 @@ async def delete_task(session: AsyncSession, business: Business, task_id: uuid.U
 
     await session.delete(task)
     await session.commit()
+
+
+async def _validate_task_references(
+    session: AsyncSession,
+    business: Business,
+    order_id: uuid.UUID | None,
+    customer_id: uuid.UUID | None,
+) -> None:
+    if customer_id is not None:
+        customer = (
+            await session.execute(
+                select(Customer.id).where(
+                    Customer.id == customer_id, Customer.business_id == business.id
+                )
+            )
+        ).scalar_one_or_none()
+        if customer is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    if order_id is not None:
+        order = (
+            await session.execute(
+                select(Order).where(Order.id == order_id, Order.business_id == business.id)
+            )
+        ).scalar_one_or_none()
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        if customer_id is not None and order.customer_id != customer_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Task order and customer must belong together.",
+            )
