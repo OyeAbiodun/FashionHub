@@ -1,7 +1,7 @@
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.schemas.customer import blank_to_none
 
@@ -39,7 +39,7 @@ class BusinessUpdate(BaseModel):
     phone: str | None = Field(default=None, min_length=1, max_length=40)
     email: EmailStr | None = None
     address: str | None = Field(default=None, max_length=500)
-    logo_url: HttpUrl | None = None
+    logo_url: str | None = None
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     invoice_notes: str | None = Field(default=None, max_length=5000)
@@ -54,6 +54,22 @@ class BusinessUpdate(BaseModel):
     @classmethod
     def normalize_optional_fields(cls, value: str | None) -> str | None:
         return blank_to_none(value)
+
+    @field_validator("logo_url")
+    @classmethod
+    def validate_logo_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if not (
+            trimmed.startswith("http://")
+            or trimmed.startswith("https://")
+            or trimmed.startswith("data:image/")
+        ):
+            raise ValueError("Logo URL must be an http(s) URL or image upload")
+        return trimmed
 
     @field_validator("currency")
     @classmethod

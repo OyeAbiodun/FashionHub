@@ -157,3 +157,85 @@ async def test_registration_rolls_back_if_user_creation_fails(client, monkeypatc
         users = (await session.execute(select(User))).scalars().all()
         assert businesses == []
         assert users == []
+
+
+async def test_forgot_and_reset_password_flow(client):
+    await client.post("/api/v1/auth/register", json=register_payload("resetuser@example.com"))
+
+    # Request reset for unknown email returns generic message without token
+    forgot_unknown = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "unknown@example.com"}
+    )
+    assert forgot_unknown.status_code == 200
+    assert forgot_unknown.json()["reset_token"] is None
+
+    # Request reset for valid email returns token in dev mode
+    forgot_resp = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "RESETUSER@EXAMPLE.COM"}
+    )
+    assert forgot_resp.status_code == 200
+    reset_token = forgot_resp.json()["reset_token"]
+    assert reset_token is not None
+
+    # Reset password with invalid token fails
+    invalid_reset = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": "invalid-token", "new_password": "NewSecretPass123!"},
+    )
+    assert invalid_reset.status_code == 400
+
+    # Reset password with valid token succeeds
+    valid_reset = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": reset_token, "new_password": "NewSecretPass123!"},
+    )
+    assert valid_reset.status_code == 200
+
+    # Login with old password fails
+    old_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "resetuser@example.com", "password": "StrongPass123!"},
+    )
+    assert old_login.status_code == 401
+
+    # Login with new password succeeds
+    new_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "resetuser@example.com", "password": "NewSecretPass123!"},
+    )
+    assert new_login.status_code == 200
+
+
+async def test_update_user_profile_succeeds(client):
+    await client.post("/api/v1/auth/register", json=register_payload("profileuser@example.com"))
+    response = await client.patch(
+        "/api/v1/auth/me",
+        json={"first_name": "UpdatedAda", "last_name": "UpdatedObi", "phone": "+2348000000000"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user"]["first_name"] == "UpdatedAda"
+    assert data["user"]["last_name"] == "UpdatedObi"
+    assert data["user"]["phone"] == "+2348000000000"
+
+
+async def test_change_user_password_succeeds(client):
+    await client.post("/api/v1/auth/register", json=register_payload("pwuser@example.com"))
+
+    # Wrong current password fails
+    wrong_pw = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": "WrongPassword123!", "new_password": "BrandNewPass123!"},
+    )
+    assert wrong_pw.status_code == 400
+    assert wrong_pw.json()["detail"] == "Incorrect current password."
+
+    # Correct current password succeeds
+    valid_pw = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": "StrongPass123!", "new_password": "BrandNewPass123!"},
+    )
+    assert valid_pw.status_code == 200
+    assert valid_pw.json()["message"] == "Password changed successfully."
+
+

@@ -1,12 +1,17 @@
 export type MeasurementUnit = "INCH" | "CM";
+export type MeasurementFieldType = "NUMBER";
 
 export interface MeasurementTemplateField {
   id: string;
   field_name: string;
   field_key: string;
+  description: string | null;
+  field_type: MeasurementFieldType;
   position: number;
   is_required: boolean;
   unit_hint: string | null;
+  default_value: string | null;
+  is_active: boolean;
 }
 
 export interface MeasurementTemplate {
@@ -15,6 +20,7 @@ export interface MeasurementTemplate {
   garment_type: string;
   description: string | null;
   is_system_template: boolean;
+  is_active: boolean;
   fields: MeasurementTemplateField[];
 }
 
@@ -23,6 +29,35 @@ export interface MeasurementTemplateListItem {
   name: string;
   garment_type: string;
   is_system_template: boolean;
+  is_active: boolean;
+}
+
+export interface MeasurementTemplateFieldInput {
+  id?: string | null;
+  field_name: string;
+  field_key?: string | null;
+  description?: string | null;
+  field_type: MeasurementFieldType;
+  position: number;
+  is_required: boolean;
+  unit_hint?: string | null;
+  default_value?: string | null;
+  is_active: boolean;
+}
+
+export interface CreateMeasurementTemplateInput {
+  name: string;
+  garment_type: string;
+  description?: string | null;
+  fields: MeasurementTemplateFieldInput[];
+}
+
+export interface UpdateMeasurementTemplateInput {
+  name?: string;
+  garment_type?: string;
+  description?: string | null;
+  is_active?: boolean;
+  fields?: MeasurementTemplateFieldInput[];
 }
 
 export interface MeasurementValue {

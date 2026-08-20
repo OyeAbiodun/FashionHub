@@ -2,9 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as measurementsApi from "../api/measurements";
 import type {
+  CreateMeasurementTemplateInput,
   CreateMeasurementProfileInput,
   GlobalMeasurementProfileQueryParams,
   MeasurementProfileQueryParams,
+  UpdateMeasurementTemplateInput,
 } from "../types/measurement";
 
 export const measurementKeys = {
@@ -44,6 +46,41 @@ export function useMeasurementTemplate(templateId: string | undefined) {
     queryKey: measurementKeys.template(templateId ?? ""),
     queryFn: () => measurementsApi.getMeasurementTemplate(templateId!),
     enabled: Boolean(templateId),
+  });
+}
+
+export function useCreateMeasurementTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateMeasurementTemplateInput) =>
+      measurementsApi.createMeasurementTemplate(payload),
+    onSuccess: (template) => {
+      queryClient.invalidateQueries({ queryKey: measurementKeys.templates });
+      queryClient.setQueryData(measurementKeys.template(template.id), template);
+    },
+  });
+}
+
+export function useUpdateMeasurementTemplate(templateId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateMeasurementTemplateInput) =>
+      measurementsApi.updateMeasurementTemplate(templateId, payload),
+    onSuccess: (template) => {
+      queryClient.invalidateQueries({ queryKey: measurementKeys.templates });
+      queryClient.setQueryData(measurementKeys.template(template.id), template);
+    },
+  });
+}
+
+export function useDeleteMeasurementTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (templateId: string) =>
+      measurementsApi.deleteMeasurementTemplate(templateId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: measurementKeys.templates });
+    },
   });
 }
 

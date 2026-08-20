@@ -13,12 +13,16 @@ from app.schemas.measurement import (
     MeasurementProfileCreate,
     MeasurementProfileListResponse,
     MeasurementProfileResponse,
+    MeasurementTemplateCreate,
     MeasurementTemplateListItem,
     MeasurementTemplateResponse,
+    MeasurementTemplateUpdate,
 )
 from app.services.measurement_service import (
     archive_measurement_profile,
+    archive_template,
     create_measurement_profile,
+    create_template,
     get_measurement_profile,
     get_template,
     list_customer_measurement_profiles,
@@ -26,6 +30,7 @@ from app.services.measurement_service import (
     list_templates,
     profile_response,
     restore_measurement_profile,
+    update_template,
 )
 
 router = APIRouter(tags=["measurements"])
@@ -61,6 +66,38 @@ async def get_measurement_template(
     business: Annotated[Business, Depends(get_current_business)],
 ) -> MeasurementTemplateResponse:
     return await get_template(session, business, template_id)
+
+
+@router.post(
+    "/measurement-templates",
+    response_model=MeasurementTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_measurement_template(
+    payload: MeasurementTemplateCreate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+) -> MeasurementTemplateResponse:
+    return await create_template(session, business, payload)
+
+
+@router.patch("/measurement-templates/{template_id}", response_model=MeasurementTemplateResponse)
+async def update_measurement_template(
+    template_id: uuid.UUID,
+    payload: MeasurementTemplateUpdate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+) -> MeasurementTemplateResponse:
+    return await update_template(session, business, template_id, payload)
+
+
+@router.delete("/measurement-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_measurement_template(
+    template_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+) -> None:
+    await archive_template(session, business, template_id)
 
 
 @router.get(

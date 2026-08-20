@@ -21,3 +21,5 @@ coverage/
 *.sqlite3
 frontend/vite.config.js
 frontend/vite.config.d.ts
+.idea/
+

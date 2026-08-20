@@ -31,6 +31,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const updateProfileMutation = useMutation({
+    mutationFn: authApi.updateUserProfile,
+    onSuccess: (session) =>
+      queryClient.setQueryData(["auth", "session"], session),
+  });
+
   const session = sessionQuery.data ?? null;
 
   return (
@@ -43,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login: loginMutation.mutateAsync,
         register: registerMutation.mutateAsync,
         logout: logoutMutation.mutateAsync,
+        updateProfile: updateProfileMutation.mutateAsync,
       }}
     >
       {children}

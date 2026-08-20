@@ -6,7 +6,18 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,6 +32,10 @@ if TYPE_CHECKING:
 class MeasurementUnit(StrEnum):
     INCH = "INCH"
     CM = "CM"
+
+
+class MeasurementFieldType(StrEnum):
+    NUMBER = "NUMBER"
 
 
 class MeasurementTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -55,6 +70,7 @@ class MeasurementTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class MeasurementTemplateField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "measurement_template_fields"
     __table_args__ = (
+        UniqueConstraint("template_id", "field_key", name="uq_measurement_template_fields_key"),
         Index("ix_measurement_template_fields_template_id", "template_id"),
         Index("ix_measurement_template_fields_template_id_position", "template_id", "position"),
     )
@@ -64,11 +80,22 @@ class MeasurementTemplateField(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     field_name: Mapped[str] = mapped_column(String(120), nullable=False)
     field_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    field_type: Mapped[MeasurementFieldType] = mapped_column(
+        Enum(MeasurementFieldType, name="measurement_field_type"),
+        nullable=False,
+        default=MeasurementFieldType.NUMBER,
+        server_default=MeasurementFieldType.NUMBER.value,
+    )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     is_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
     unit_hint: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    default_value: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     template: Mapped[MeasurementTemplate] = relationship(back_populates="fields")
 

@@ -1,4 +1,4 @@
-import { ArrowRight, Plus, Ruler, Search } from "lucide-react";
+import { ArrowRight, Plus, Ruler, Search, SlidersHorizontal } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -63,9 +63,14 @@ export function MeasurementsPage() {
         title="Measurement Vault"
         description="Manage customer sizing profiles and measurement history."
         actions={
-          <Button type="button" onClick={() => setSelectorOpen(true)}>
-            <Plus className="h-4 w-4" aria-hidden="true" /> Add Measurement
-          </Button>
+          <>
+            <Link className={buttonStyles({ variant: "outline" })} to="/measurement-templates">
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Manage Templates
+            </Link>
+            <Button type="button" onClick={() => setSelectorOpen(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" /> Add Measurement
+            </Button>
+          </>
         }
       />
 

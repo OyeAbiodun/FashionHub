@@ -60,6 +60,29 @@ export function NewMeasurementPage() {
     }
   }, [name, selectedTemplate.data]);
 
+  const activeFields = useMemo(
+    () =>
+      selectedTemplate.data?.fields
+        .filter((field) => field.is_active)
+        .sort((first, second) => first.position - second.position) ?? [],
+    [selectedTemplate.data],
+  );
+
+  useEffect(() => {
+    if (!selectedTemplate.data) {
+      return;
+    }
+    setValues(
+      Object.fromEntries(
+        activeFields.map((field) => [
+          field.field_key,
+          field.default_value ?? "",
+        ]),
+      ),
+    );
+    setFieldErrors({});
+  }, [activeFields, selectedTemplate.data]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     const template = selectedTemplate.data;
@@ -67,7 +90,7 @@ export function NewMeasurementPage() {
       return;
     }
     const nextErrors: Record<string, string> = {};
-    for (const field of template.fields) {
+    for (const field of activeFields) {
       if (field.is_required && !values[field.field_key]) {
         nextErrors[field.field_key] = `${field.field_name} is required`;
       }
@@ -83,12 +106,14 @@ export function NewMeasurementPage() {
       garment_type: template.garment_type,
       unit,
       notes: notes.trim() || null,
-      values: template.fields.map((field) => ({
-        field_key: field.field_key,
-        field_name: field.field_name,
-        value: values[field.field_key],
-        position: field.position,
-      })),
+      values: activeFields
+        .filter((field) => field.is_required || values[field.field_key])
+        .map((field) => ({
+          field_key: field.field_key,
+          field_name: field.field_name,
+          value: values[field.field_key],
+          position: field.position,
+        })),
     };
     try {
       const profile = await createMutation.mutateAsync(payload);
@@ -209,7 +234,7 @@ export function NewMeasurementPage() {
             ) : null}
             {selectedTemplate.data ? (
               <div className="mt-6 grid gap-x-5 gap-y-4 sm:grid-cols-2">
-                {selectedTemplate.data.fields.map((field) => (
+                {activeFields.map((field) => (
                   <label key={field.field_key} className="block">
                     <span className="text-sm font-medium text-ink">
                       {field.field_name} {field.is_required ? "*" : ""}
@@ -229,9 +254,14 @@ export function NewMeasurementPage() {
                         }
                       />
                       <span className="pointer-events-none absolute bottom-3 right-3 text-sm text-muted">
-                        {unit === "INCH" ? "in" : "cm"}
+                        {field.unit_hint || (unit === "INCH" ? "in" : "cm")}
                       </span>
                     </div>
+                    {field.description ? (
+                      <span className="mt-1 block text-xs text-muted">
+                        {field.description}
+                      </span>
+                    ) : null}
                     {fieldErrors[field.field_key] ? (
                       <span className="mt-1 block text-sm text-red-700">
                         {fieldErrors[field.field_key]}

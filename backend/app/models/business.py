@@ -22,7 +22,7 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     phone: Mapped[str] = mapped_column(String(40), nullable=False)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    logo_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="NGN", server_default="NGN"
     )

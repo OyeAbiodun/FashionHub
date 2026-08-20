@@ -6,6 +6,7 @@ import {
   Menu,
   Ruler,
   Settings,
+  User,
   Users,
   X,
   type LucideIcon,
@@ -41,6 +42,7 @@ const navItems: Array<{
     icon: Ruler,
     matches: (pathname) =>
       pathname.startsWith("/measurements") ||
+      pathname.startsWith("/measurement-templates") ||
       pathname.startsWith("/measurement-profiles"),
   },
   {
@@ -51,6 +53,13 @@ const navItems: Array<{
       pathname.startsWith("/orders") || pathname.startsWith("/invoices"),
   },
 ];
+
+const profileNavItem = {
+  to: "/profile",
+  label: "My Profile",
+  icon: User,
+  matches: (pathname: string) => pathname.startsWith("/profile"),
+};
 
 const settingsNavItem = {
   to: "/settings",
@@ -65,6 +74,7 @@ function pageContext(pathname: string): string {
   }
   if (
     pathname.startsWith("/measurements") ||
+    pathname.startsWith("/measurement-templates") ||
     pathname.startsWith("/measurement-profiles")
   ) {
     return "Measurements";
@@ -74,6 +84,9 @@ function pageContext(pathname: string): string {
   }
   if (pathname.startsWith("/settings")) {
     return "Settings";
+  }
+  if (pathname.startsWith("/profile")) {
+    return "Profile";
   }
   return "Dashboard";
 }
@@ -143,13 +156,19 @@ export function AppShell() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden text-right sm:block">
-            <p className="max-w-44 truncate text-sm font-semibold text-ink">
-              {business?.name}
-            </p>
-            <p className="max-w-44 truncate text-xs text-muted">{userName}</p>
-          </div>
-          <AvatarInitials name={userName} size="sm" />
+          <Link
+            to="/profile"
+            className="flex items-center gap-3 rounded-lg p-1.5 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            title="View My Profile"
+          >
+            <div className="hidden text-right sm:block">
+              <p className="max-w-44 truncate text-sm font-semibold text-ink">
+                {business?.name}
+              </p>
+              <p className="max-w-44 truncate text-xs text-muted">{userName}</p>
+            </div>
+            <AvatarInitials name={userName} size="sm" />
+          </Link>
         </div>
       </header>
 
@@ -249,7 +268,8 @@ function SidebarContent({
             </Link>
           );
         })}
-        <div className="mt-6 border-t border-white/10 pt-4">
+        <div className="mt-6 border-t border-white/10 pt-4 space-y-1">
+          <SidebarLink item={profileNavItem} pathname={pathname} />
           <SidebarLink item={settingsNavItem} pathname={pathname} />
         </div>
       </nav>

@@ -14,12 +14,25 @@ from app.core.security import (
     set_auth_cookies,
 )
 from app.models.user import User
-from app.schemas.auth import AuthSession, LoginRequest, MessageResponse, RegisterRequest
+from app.schemas.auth import (
+    AuthSession,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    LoginRequest,
+    MessageResponse,
+    RegisterRequest,
+    ResetPasswordRequest,
+)
+from app.schemas.user import ChangePasswordRequest, UserUpdate
 from app.services.auth_service import (
     authenticate_user,
+    change_user_password,
     create_auth_tokens,
     get_user_by_id,
     register_owner,
+    request_password_reset,
+    reset_password_with_token,
+    update_user_profile,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -99,3 +112,48 @@ async def logout(
 @router.get("/me", response_model=AuthSession)
 async def me(current_user: Annotated[User, Depends(get_current_user)]) -> AuthSession:
     return session_payload(current_user)
+
+
+@router.patch("/me", response_model=AuthSession)
+async def update_profile(
+    payload: UserUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AuthSession:
+    updated_user = await update_user_profile(session, current_user, payload)
+    return session_payload(updated_user)
+
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    await change_user_password(session, current_user, payload)
+    return MessageResponse(message="Password changed successfully.")
+
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ForgotPasswordResponse:
+    message, reset_token = await request_password_reset(session, payload.email, settings)
+    return ForgotPasswordResponse(
+        message=message,
+        reset_token=reset_token if settings.app_env.lower() == "development" else None,
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MessageResponse:
+    await reset_password_with_token(session, payload.token, payload.new_password, settings)
+    return MessageResponse(message="Password has been successfully reset.")
+

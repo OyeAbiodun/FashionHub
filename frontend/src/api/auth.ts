@@ -40,3 +40,59 @@ export async function register(payload: RegisterPayload): Promise<AuthSession> {
 export async function logout(): Promise<void> {
   await apiClient.post("/auth/logout");
 }
+
+export interface ForgotPasswordResponse {
+  message: string;
+  reset_token?: string | null;
+}
+
+export async function forgotPassword(
+  email: string
+): Promise<ForgotPasswordResponse> {
+  const response = await apiClient.post<ForgotPasswordResponse>(
+    "/auth/forgot-password",
+    { email }
+  );
+  return response.data;
+}
+
+export async function resetPassword(
+  token: string,
+  new_password: string
+): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>(
+    "/auth/reset-password",
+    { token, new_password }
+  );
+  return response.data;
+}
+
+export interface UpdateUserProfilePayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string | null;
+}
+
+export async function updateUserProfile(
+  payload: UpdateUserProfilePayload
+): Promise<AuthSession> {
+  const response = await apiClient.patch<AuthSession>("/auth/me", payload);
+  return response.data;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
+export async function changePassword(
+  payload: ChangePasswordPayload
+): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>(
+    "/auth/change-password",
+    payload
+  );
+  return response.data;
+}
+
+

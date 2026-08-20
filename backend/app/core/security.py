@@ -11,7 +11,7 @@ password_hasher = PasswordHash.recommended()
 
 ACCESS_COOKIE_NAME = "fashionos_access_token"
 REFRESH_COOKIE_NAME = "fashionos_refresh_token"
-TokenKind = Literal["access", "refresh"]
+TokenKind = Literal["access", "refresh", "password_reset"]
 
 
 def hash_password(password: str) -> str:
@@ -26,6 +26,8 @@ def create_token(subject: str, settings: Settings, token_kind: TokenKind) -> str
     now = datetime.now(UTC)
     if token_kind == "access":
         expires_at = now + timedelta(minutes=settings.access_token_expire_minutes)
+    elif token_kind == "password_reset":
+        expires_at = now + timedelta(minutes=15)
     else:
         expires_at = now + timedelta(days=settings.refresh_token_expire_days)
 

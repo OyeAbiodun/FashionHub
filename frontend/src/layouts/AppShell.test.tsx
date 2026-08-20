@@ -19,6 +19,7 @@ function renderShell(route = "/dashboard", logout = vi.fn()) {
           login: vi.fn(),
           register: vi.fn(),
           logout,
+          updateProfile: vi.fn(),
         }}
       >
         <Routes>

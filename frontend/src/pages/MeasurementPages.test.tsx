@@ -8,6 +8,7 @@ import * as customersApi from "../api/customers";
 import * as measurementsApi from "../api/measurements";
 import { CustomerMeasurementsSection } from "../components/CustomerMeasurementsSection";
 import { MeasurementProfilePage } from "./MeasurementProfilePage";
+import { MeasurementTemplatesPage } from "./MeasurementTemplatesPage";
 import { NewMeasurementPage } from "./NewMeasurementPage";
 import { renderWithAuth } from "../test/render";
 import type { Customer } from "../types/customer";
@@ -43,22 +44,31 @@ const template: MeasurementTemplate = {
   garment_type: "SENATOR",
   description: null,
   is_system_template: true,
+  is_active: true,
   fields: [
     {
       id: "field-1",
       field_name: "Shoulder",
       field_key: "shoulder",
+      description: null,
+      field_type: "NUMBER",
       position: 1,
       is_required: true,
       unit_hint: "inches",
+      default_value: null,
+      is_active: true,
     },
     {
       id: "field-2",
       field_name: "Chest",
       field_key: "chest",
+      description: null,
+      field_type: "NUMBER",
       position: 2,
       is_required: true,
       unit_hint: "inches",
+      default_value: null,
+      is_active: true,
     },
   ],
 };
@@ -143,9 +153,22 @@ beforeEach(() => {
       name: template.name,
       garment_type: template.garment_type,
       is_system_template: true,
+      is_active: true,
     },
   ]);
   vi.mocked(measurementsApi.getMeasurementTemplate).mockResolvedValue(template);
+  vi.mocked(measurementsApi.createMeasurementTemplate).mockResolvedValue({
+    ...template,
+    id: "template-2",
+    name: "Kaftan",
+    garment_type: "KAFTAN",
+    is_system_template: false,
+  });
+  vi.mocked(measurementsApi.updateMeasurementTemplate).mockResolvedValue({
+    ...template,
+    name: "Senator Pro",
+  });
+  vi.mocked(measurementsApi.deleteMeasurementTemplate).mockResolvedValue();
   vi.mocked(measurementsApi.createCustomerMeasurement).mockResolvedValue(
     profile,
   );
@@ -345,6 +368,82 @@ test("customer selector no-customer state offers Add Customer", async () => {
   expect(screen.getByRole("link", { name: /add customer/i })).toHaveAttribute(
     "href",
     "/customers/new",
+  );
+});
+
+test("measurement vault links to template management", async () => {
+  renderWithAuth(
+    <Routes>
+      <Route path="/measurements" element={<MeasurementsPage />} />
+      <Route
+        path="/measurement-templates"
+        element={<div>Template management route</div>}
+      />
+    </Routes>,
+    { authenticated: true, route: "/measurements" },
+  );
+
+  await userEvent.click(
+    screen.getByRole("link", { name: /manage templates/i }),
+  );
+
+  expect(
+    await screen.findByText("Template management route"),
+  ).toBeInTheDocument();
+});
+
+test("template management loads templates and saves edited fields", async () => {
+  renderWithAuth(<MeasurementTemplatesPage />, { authenticated: true });
+
+  expect(
+    await screen.findByRole("heading", { name: "Measurement Templates" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByDisplayValue("Senator")).toBeInTheDocument();
+  await userEvent.clear(screen.getByDisplayValue("Senator"));
+  await userEvent.type(screen.getByLabelText("Name"), "Senator Pro");
+  await userEvent.click(screen.getByRole("button", { name: /add field/i }));
+  const labels = screen.getAllByLabelText("Label");
+  await userEvent.type(labels[labels.length - 1], "Cap Size");
+  await userEvent.click(screen.getByRole("button", { name: /save template/i }));
+
+  await waitFor(() =>
+    expect(measurementsApi.updateMeasurementTemplate).toHaveBeenCalledWith(
+      "template-1",
+      expect.objectContaining({
+        name: "Senator Pro",
+        fields: expect.arrayContaining([
+          expect.objectContaining({
+            field_name: "Cap Size",
+            field_key: "cap_size",
+          }),
+        ]),
+      }),
+    ),
+  );
+});
+
+test("template management creates a custom template", async () => {
+  vi.mocked(measurementsApi.listMeasurementTemplates).mockResolvedValueOnce([]);
+  renderWithAuth(<MeasurementTemplatesPage />, { authenticated: true });
+
+  await userEvent.type(await screen.findByLabelText("Name"), "Kaftan");
+  await userEvent.type(screen.getByLabelText("Garment type"), "kaftan");
+  await userEvent.type(screen.getByLabelText("Label"), "Chest");
+  await userEvent.click(screen.getByRole("button", { name: /save template/i }));
+
+  await waitFor(() =>
+    expect(measurementsApi.createMeasurementTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Kaftan",
+        garment_type: "KAFTAN",
+        fields: [
+          expect.objectContaining({
+            field_name: "Chest",
+            field_key: "chest",
+          }),
+        ],
+      }),
+    ),
   );
 });
 

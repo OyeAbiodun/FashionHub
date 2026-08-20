@@ -51,6 +51,7 @@ export function renderWithAuth(
             login: vi.fn(),
             register: vi.fn(),
             logout: vi.fn(),
+            updateProfile: vi.fn(),
           }}
         >
           {ui}

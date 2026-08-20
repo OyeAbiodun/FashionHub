@@ -260,6 +260,192 @@ async def test_template_detail_returns_ordered_fields(client):
     positions = [field["position"] for field in template["fields"]]
     assert positions == sorted(positions)
     assert template["fields"][0]["field_key"] == "shoulder"
+    assert template["fields"][0]["field_type"] == "NUMBER"
+    assert template["fields"][0]["is_active"] is True
+
+
+async def test_business_can_create_custom_measurement_template(client):
+    await register_owner(client, "owner@example.com")
+
+    response = await client.post(
+        "/api/v1/measurement-templates",
+        json={
+            "name": "Men's Bespoke Suit",
+            "garment_type": "SUIT",
+            "description": "Standard suit measurement template",
+            "fields": [
+                {
+                    "name": "Chest",
+                    "key": "chest",
+                    "unit": "inches",
+                    "field_type": "NUMBER",
+                    "required": True,
+                    "default_value": "42.00",
+                    "position": 1,
+                },
+                {
+                    "name": "Waist",
+                    "key": "waist",
+                    "unit": "inches",
+                    "field_type": "NUMBER",
+                    "required": False,
+                    "default_value": None,
+                    "position": 2,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "Men's Bespoke Suit"
+    assert data["is_system_template"] is False
+    assert [field["field_key"] for field in data["fields"]] == ["chest", "waist"]
+    assert data["fields"][0]["default_value"] == "42.00"
+
+
+async def test_business_can_update_template_fields_and_order(client):
+    await register_owner(client, "owner@example.com")
+    created = (
+        await client.post(
+            "/api/v1/measurement-templates",
+            json={
+                "name": "Kaftan",
+                "garment_type": "KAFTAN",
+                "fields": [
+                    {"field_name": "Chest", "field_key": "chest", "position": 1},
+                    {"field_name": "Length", "field_key": "length", "position": 2},
+                ],
+            },
+        )
+    ).json()
+
+    response = await client.patch(
+        f"/api/v1/measurement-templates/{created['id']}",
+        json={
+            "name": "Premium Kaftan",
+            "description": "Updated workroom template",
+            "fields": [
+                {
+                    "field_name": "Body Length",
+                    "field_key": "body_length",
+                    "description": "Top shoulder to hem.",
+                    "position": 1,
+                    "is_required": True,
+                    "unit_hint": "inches",
+                    "default_value": "40.00",
+                    "is_active": True,
+                },
+                {
+                    "field_name": "Chest",
+                    "field_key": "chest",
+                    "position": 2,
+                    "is_required": False,
+                    "unit_hint": "inches",
+                    "is_active": True,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Premium Kaftan"
+    assert data["description"] == "Updated workroom template"
+    assert [field["field_key"] for field in data["fields"]] == ["body_length", "chest"]
+    assert data["fields"][0]["description"] == "Top shoulder to hem."
+    assert data["fields"][0]["default_value"] == "40.00"
+    assert data["fields"][1]["is_required"] is False
+
+
+async def test_template_archive_hides_template_without_deleting_measurements(client):
+    await register_owner(client, "owner@example.com")
+    customer = await create_customer(client)
+    template = await senator_template(client)
+    profile = await create_profile(client, customer["id"], template)
+
+    response = await client.delete(f"/api/v1/measurement-templates/{template['id']}")
+
+    assert response.status_code == 204
+    assert (await client.get(f"/api/v1/measurement-templates/{template['id']}")).status_code == 404
+    detail = await client.get(f"/api/v1/measurement-profiles/{profile['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["template_name"] == "Senator"
+    assert len(detail.json()["values"]) == len(template["fields"])
+
+
+async def test_template_update_does_not_rewrite_historical_measurement_values(client):
+    await register_owner(client, "owner@example.com")
+    customer = await create_customer(client)
+    template = await senator_template(client)
+    profile = await create_profile(client, customer["id"], template)
+
+    fields = [
+        {
+            "field_name": field["field_name"],
+            "field_key": field["field_key"],
+            "position": field["position"],
+            "is_required": field["is_required"],
+            "unit_hint": field["unit_hint"],
+            "field_type": "NUMBER",
+            "is_active": field["is_active"],
+        }
+        for field in template["fields"]
+    ]
+    fields[1]["field_name"] = "Full Chest"
+    fields[1]["field_key"] = "full_chest"
+    await client.patch(
+        f"/api/v1/measurement-templates/{template['id']}",
+        json={"fields": fields},
+    )
+
+    detail = (await client.get(f"/api/v1/measurement-profiles/{profile['id']}")).json()
+    chest = next(value for value in detail["values"] if value["field_key"] == "chest")
+    assert chest["field_name"] == "Chest"
+    assert chest["value"] == "42.50"
+
+
+async def test_template_duplicate_field_keys_are_rejected(client):
+    await register_owner(client, "owner@example.com")
+
+    response = await client.post(
+        "/api/v1/measurement-templates",
+        json={
+            "name": "Broken",
+            "garment_type": "BROKEN",
+            "fields": [
+                {"field_name": "Chest", "field_key": "chest", "position": 1},
+                {"field_name": "Chest Duplicate", "field_key": "chest", "position": 2},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_business_cannot_update_or_archive_another_tenant_template(client):
+    first_cookies, _ = await register_owner(client, "one@example.com")
+    template = (
+        await client.post(
+            "/api/v1/measurement-templates",
+            json={
+                "name": "Private",
+                "garment_type": "PRIVATE",
+                "fields": [{"field_name": "Chest", "field_key": "chest", "position": 1}],
+            },
+        )
+    ).json()
+
+    await register_owner(client, "two@example.com")
+    update_response = await client.patch(
+        f"/api/v1/measurement-templates/{template['id']}",
+        json={"name": "Stolen"},
+    )
+    delete_response = await client.delete(f"/api/v1/measurement-templates/{template['id']}")
+
+    assert update_response.status_code == 404
+    assert delete_response.status_code == 404
+    use_cookies(client, first_cookies)
 
 
 async def test_owner_can_create_measurement_profile_for_their_customer(client):

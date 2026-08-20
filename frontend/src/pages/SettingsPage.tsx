@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -163,48 +163,87 @@ export function SettingsPage() {
 
         <SettingsCard
           title="Branding"
-          description="Use a secure, publicly accessible image URL for your logo."
+          description="Upload an image file (PNG, JPG, WebP, SVG) or enter a secure logo image URL."
         >
           <div className="grid items-start gap-6 md:grid-cols-[1fr_220px]">
-            <div>
-              <label className={labelStyles} htmlFor="business-logo-url">
-                Logo URL optional
-              </label>
-              <div className="flex gap-2">
+            <div className="space-y-4">
+              <div>
+                <label className={labelStyles} htmlFor="logo-file-input">
+                  Upload Logo File
+                </label>
+                <div className="flex items-center gap-3 mt-1">
+                  <input
+                    id="logo-file-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        const dataUrl = evt.target?.result as string;
+                        if (dataUrl) {
+                          setValue("logo_url", dataUrl, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <label
+                    htmlFor="logo-file-input"
+                    className={buttonStyles({
+                      variant: "outline",
+                      className: "cursor-pointer inline-flex items-center gap-2",
+                    })}
+                  >
+                    <Upload className="h-4 w-4" />
+                    Choose Image File
+                  </label>
+                  {logoUrl ? (
+                    <button
+                      className={buttonStyles({
+                        variant: "outline",
+                        className: "h-11 px-3 text-xs text-red-700 hover:bg-red-50 border-red-200",
+                      })}
+                      type="button"
+                      aria-label="Remove logo"
+                      onClick={() =>
+                        setValue("logo_url", "", {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div>
+                <label className={labelStyles} htmlFor="business-logo-url">
+                  Logo URL optional
+                </label>
                 <input
                   id="business-logo-url"
                   className={inputStyles}
                   placeholder="https://example.com/logo.png"
                   {...register("logo_url")}
                 />
-                {logoUrl ? (
-                  <button
-                    className={buttonStyles({
-                      variant: "outline",
-                      className: "mt-2 h-11 w-11 px-0",
-                    })}
-                    type="button"
-                    aria-label="Remove logo"
-                    onClick={() =>
-                      setValue("logo_url", "", {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      })
-                    }
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                <span className={helpTextStyles}>
+                  Supports uploaded image files or direct image URLs.
+                </span>
+                {errors.logo_url ? (
+                  <span className={errorTextStyles}>
+                    {errors.logo_url.message}
+                  </span>
                 ) : null}
               </div>
-              <span className={helpTextStyles}>
-                PNG, JPG, WebP, or SVG URLs work best on a transparent or white
-                background.
-              </span>
-              {errors.logo_url ? (
-                <span className={errorTextStyles}>
-                  {errors.logo_url.message}
-                </span>
-              ) : null}
             </div>
             <div className="rounded-xl border border-dashed border-border bg-stone-50 p-5 text-center">
               <BusinessLogo

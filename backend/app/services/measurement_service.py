@@ -6,12 +6,14 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.measurement_defaults import normalize_field_key
+from app.core.measurement_defaults import SYSTEM_MEASUREMENT_TEMPLATES, normalize_field_key
 from app.models.business import Business
 from app.models.customer import Customer
 from app.models.measurement import (
+    MeasurementFieldType,
     MeasurementProfile,
     MeasurementTemplate,
+    MeasurementTemplateField,
     MeasurementValue,
 )
 from app.models.user import User
@@ -22,6 +24,9 @@ from app.schemas.measurement import (
     MeasurementProfileListItem,
     MeasurementProfileListResponse,
     MeasurementProfileResponse,
+    MeasurementTemplateCreate,
+    MeasurementTemplateFieldWrite,
+    MeasurementTemplateUpdate,
     total_pages,
 )
 from app.services.customer_service import get_customer, normalize_phone
@@ -59,13 +64,50 @@ def visible_template_filter(business: Business):
     )
 
 
+def seed_default_templates_for_business(business: Business) -> None:
+    for name, garment_type, fields in SYSTEM_MEASUREMENT_TEMPLATES:
+        template = MeasurementTemplate(
+            business=business,
+            name=name,
+            garment_type=garment_type,
+            description="System default measurement template.",
+            is_system_template=True,
+            is_active=True,
+        )
+        for position, field_name in enumerate(fields, start=1):
+            template.fields.append(
+                MeasurementTemplateField(
+                    field_name=field_name,
+                    field_key=normalize_field_key(field_name),
+                    field_type=MeasurementFieldType.NUMBER,
+                    position=position,
+                    is_required=True,
+                    unit_hint="inches",
+                    is_active=True,
+                )
+            )
+
+
 async def list_templates(
     session: AsyncSession,
     business: Business,
 ) -> list[MeasurementTemplate]:
+    business_template_count = (
+        await session.execute(
+            select(func.count(MeasurementTemplate.id)).where(
+                MeasurementTemplate.business_id == business.id,
+                MeasurementTemplate.is_active.is_(True),
+            )
+        )
+    ).scalar_one()
+    filters = (
+        [MeasurementTemplate.business_id == business.id]
+        if business_template_count
+        else [visible_template_filter(business)]
+    )
     result = await session.execute(
         select(MeasurementTemplate)
-        .where(visible_template_filter(business), MeasurementTemplate.is_active.is_(True))
+        .where(*filters, MeasurementTemplate.is_active.is_(True))
         .order_by(MeasurementTemplate.is_system_template.desc(), MeasurementTemplate.name.asc())
     )
     return list(result.scalars().all())
@@ -92,13 +134,150 @@ async def get_template(
     return template
 
 
+async def get_template_for_mutation(
+    session: AsyncSession,
+    business: Business,
+    template_id: uuid.UUID,
+) -> MeasurementTemplate:
+    result = await session.execute(
+        select(MeasurementTemplate)
+        .options(selectinload(MeasurementTemplate.fields))
+        .where(
+            MeasurementTemplate.id == template_id,
+            MeasurementTemplate.is_active.is_(True),
+            MeasurementTemplate.business_id == business.id,
+        )
+    )
+    template = result.scalar_one_or_none()
+    if template is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+    template.fields.sort(key=lambda field: field.position)
+    return template
+
+
+def _build_template_field(payload: MeasurementTemplateFieldWrite) -> MeasurementTemplateField:
+    field = MeasurementTemplateField(id=payload.id or uuid.uuid4())
+    _apply_template_field_payload(field, payload)
+    return field
+
+
+def _apply_template_field_payload(
+    field: MeasurementTemplateField,
+    payload: MeasurementTemplateFieldWrite,
+) -> None:
+    field.field_name = payload.field_name.strip()
+    field.field_key = payload.field_key or normalize_field_key(payload.field_name)
+    field.description = payload.description
+    field.field_type = payload.field_type
+    field.position = payload.position
+    field.is_required = payload.is_required
+    field.unit_hint = payload.unit_hint
+    field.default_value = payload.default_value
+    field.is_active = payload.is_active
+
+
+def _replace_template_fields(
+    template: MeasurementTemplate,
+    fields: list[MeasurementTemplateFieldWrite],
+) -> None:
+    if not fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Measurement templates must contain at least one field.",
+        )
+    keys = [field.field_key for field in fields]
+    if len(keys) != len(set(keys)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Measurement template fields cannot contain duplicate keys.",
+        )
+    existing_by_id = {field.id: field for field in template.fields}
+    existing_by_key = {field.field_key: field for field in template.fields}
+    next_fields: list[MeasurementTemplateField] = []
+    for field_payload in fields:
+        field = None
+        if field_payload.id is not None:
+            field = existing_by_id.get(field_payload.id)
+        if field is None:
+            field = existing_by_key.get(field_payload.field_key or "")
+        if field is None:
+            field = _build_template_field(field_payload)
+        else:
+            _apply_template_field_payload(field, field_payload)
+        next_fields.append(field)
+    template.fields = next_fields
+
+
+async def create_template(
+    session: AsyncSession,
+    business: Business,
+    payload: MeasurementTemplateCreate,
+) -> MeasurementTemplate:
+    template = MeasurementTemplate(
+        business_id=business.id,
+        name=payload.name.strip(),
+        garment_type=payload.garment_type.strip(),
+        description=payload.description,
+        is_system_template=False,
+        is_active=True,
+    )
+    _replace_template_fields(template, payload.fields)
+    session.add(template)
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    return await get_template_for_mutation(session, business, template.id)
+
+
+async def update_template(
+    session: AsyncSession,
+    business: Business,
+    template_id: uuid.UUID,
+    payload: MeasurementTemplateUpdate,
+) -> MeasurementTemplate:
+    template = await get_template_for_mutation(session, business, template_id)
+    if payload.name is not None:
+        template.name = payload.name.strip()
+    if payload.garment_type is not None:
+        template.garment_type = payload.garment_type.strip()
+    if "description" in payload.model_fields_set:
+        template.description = payload.description
+    if payload.is_active is not None:
+        template.is_active = payload.is_active
+    if payload.fields is not None:
+        _replace_template_fields(template, payload.fields)
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    return await get_template_for_mutation(session, business, template.id)
+
+
+async def archive_template(
+    session: AsyncSession,
+    business: Business,
+    template_id: uuid.UUID,
+) -> None:
+    template = await get_template_for_mutation(session, business, template_id)
+    template.is_active = False
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
+
 def validate_template_values(
     template: MeasurementTemplate,
     payload: MeasurementProfileCreate,
 ) -> None:
-    template_fields = {field.field_key: field for field in template.fields}
+    active_fields = [field for field in template.fields if field.is_active]
+    template_fields = {field.field_key: field for field in active_fields}
     submitted_keys = {normalize_field_key(value.field_key) for value in payload.values}
-    required_keys = {field.field_key for field in template.fields if field.is_required}
+    required_keys = {field.field_key for field in active_fields if field.is_required}
     unknown_keys = submitted_keys - set(template_fields)
     missing_keys = required_keys - submitted_keys
     if unknown_keys:
@@ -140,7 +319,7 @@ async def create_measurement_profile(
         recorded_by=current_user.id,
         recorded_at=payload.recorded_at or datetime.now(UTC),
     )
-    template_fields = {field.field_key: field for field in template.fields}
+    template_fields = {field.field_key: field for field in template.fields if field.is_active}
     for value in payload.values:
         template_field = template_fields[normalize_field_key(value.field_key)]
         profile.values.append(

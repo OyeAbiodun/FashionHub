@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type {
+  CreateMeasurementTemplateInput,
   CreateMeasurementProfileInput,
   GlobalMeasurementProfileListResponse,
   GlobalMeasurementProfileQueryParams,
@@ -8,6 +9,7 @@ import type {
   MeasurementProfileQueryParams,
   MeasurementTemplate,
   MeasurementTemplateListItem,
+  UpdateMeasurementTemplateInput,
 } from "../types/measurement";
 
 export async function listMeasurementProfiles(
@@ -36,6 +38,33 @@ export async function getMeasurementTemplate(
     `/measurement-templates/${templateId}`,
   );
   return response.data;
+}
+
+export async function createMeasurementTemplate(
+  payload: CreateMeasurementTemplateInput,
+): Promise<MeasurementTemplate> {
+  const response = await apiClient.post<MeasurementTemplate>(
+    "/measurement-templates",
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateMeasurementTemplate(
+  templateId: string,
+  payload: UpdateMeasurementTemplateInput,
+): Promise<MeasurementTemplate> {
+  const response = await apiClient.patch<MeasurementTemplate>(
+    `/measurement-templates/${templateId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteMeasurementTemplate(
+  templateId: string,
+): Promise<void> {
+  await apiClient.delete(`/measurement-templates/${templateId}`);
 }
 
 export async function listCustomerMeasurements(

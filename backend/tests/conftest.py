@@ -35,9 +35,11 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
                     MeasurementTemplateField(
                         field_name=field_name,
                         field_key=normalize_field_key(field_name),
+                        field_type="NUMBER",
                         position=position,
                         is_required=True,
                         unit_hint="inches",
+                        is_active=True,
                     )
                 )
             seed_session.add(template)
