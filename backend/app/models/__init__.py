@@ -16,6 +16,8 @@ from app.models.measurement import (
     MeasurementValue,
 )
 from app.models.order import Order, OrderCounter, OrderItem, OrderStatus, OrderStatusHistory
+from app.models.role import Role
+from app.models.task import Task, TaskPriority, TaskStatus
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -37,6 +39,10 @@ __all__ = [
     "Payment",
     "PaymentMethod",
     "PaymentStatus",
+    "Role",
+    "Task",
+    "TaskPriority",
+    "TaskStatus",
     "User",
     "UserRole",
 ]

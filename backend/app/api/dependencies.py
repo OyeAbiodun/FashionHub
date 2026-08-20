@@ -8,7 +8,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
 from app.core.security import ACCESS_COOKIE_NAME, decode_token
 from app.models.business import Business
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services.auth_service import get_user_by_id
 
 
@@ -49,3 +49,33 @@ async def get_current_business(
 def tenant_filter(model, current_user: User):
     """Apply this to future tenant-owned SELECTs: where(tenant_filter(Model, current_user))."""
     return model.business_id == current_user.business_id
+
+
+async def get_current_super_admin(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin privilege required.",
+        )
+    return current_user
+
+
+def require_permission(required_permission: str):
+    async def permission_checker(
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        from app.models.user import UserRole
+
+        if current_user.role in {UserRole.SUPER_ADMIN, UserRole.BUSINESS_ADMIN, UserRole.OWNER}:
+            return current_user
+        if not current_user.permissions or required_permission not in current_user.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission '{required_permission}' required.",
+            )
+        return current_user
+
+    return permission_checker
+

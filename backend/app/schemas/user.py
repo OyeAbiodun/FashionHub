@@ -15,6 +15,7 @@ class UserPublic(BaseModel):
     email: str
     phone: str | None
     role: UserRole
+    permissions: list[str] | None = None
     is_active: bool
 
 

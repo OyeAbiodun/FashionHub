@@ -1,0 +1,199 @@
+import uuid
+from decimal import Decimal
+
+from fastapi import HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.business import Business
+from app.models.customer import Customer
+from app.models.finance import Payment
+from app.models.order import Order
+from app.models.user import User
+from app.schemas.admin import (
+    BusinessTenantDetail,
+    PlatformActivityItem,
+    PlatformMetrics,
+    UpdateBusinessEntitlements,
+)
+
+
+async def get_platform_metrics(session: AsyncSession) -> PlatformMetrics:
+    total_b_result = await session.execute(select(func.count(Business.id)))
+    total_businesses = total_b_result.scalar_one_or_none() or 0
+
+    active_b_result = await session.execute(
+        select(func.count(Business.id)).where(Business.is_active.is_(True))
+    )
+    active_businesses = active_b_result.scalar_one_or_none() or 0
+
+    total_u_result = await session.execute(select(func.count(User.id)))
+    total_users = total_u_result.scalar_one_or_none() or 0
+
+    total_c_result = await session.execute(select(func.count(Customer.id)))
+    total_customers = total_c_result.scalar_one_or_none() or 0
+
+    total_o_result = await session.execute(select(func.count(Order.id)))
+    total_orders = total_o_result.scalar_one_or_none() or 0
+
+    rev_result = await session.execute(select(func.coalesce(func.sum(Payment.amount), 0)))
+    total_revenue_decimal = Decimal(str(rev_result.scalar_one_or_none() or 0))
+
+    return PlatformMetrics(
+        total_businesses=total_businesses,
+        active_businesses=active_businesses,
+        total_users=total_users,
+        total_customers=total_customers,
+        total_orders=total_orders,
+        total_revenue=f"{total_revenue_decimal:.2f}",
+    )
+
+
+async def list_all_businesses(
+    session: AsyncSession,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    active_only: bool = False,
+) -> tuple[list[BusinessTenantDetail], int]:
+    stmt = select(Business)
+    if active_only:
+        stmt = stmt.where(Business.is_active.is_(True))
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(
+            (Business.name.ilike(term))
+            | (Business.phone.ilike(term))
+            | (Business.email.ilike(term))
+        )
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_count = (await session.execute(count_stmt)).scalar_one_or_none() or 0
+
+    stmt = stmt.order_by(Business.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    businesses = (await session.execute(stmt)).scalars().all()
+
+    items: list[BusinessTenantDetail] = []
+    for b in businesses:
+        detail = await get_business_tenant_detail(session, b.id, business_obj=b)
+        items.append(detail)
+
+    return items, total_count
+
+
+async def get_business_tenant_detail(
+    session: AsyncSession, business_id: uuid.UUID, business_obj: Business | None = None
+) -> BusinessTenantDetail:
+    if business_obj is None:
+        result = await session.execute(select(Business).where(Business.id == business_id))
+        business_obj = result.scalar_one_or_none()
+        if business_obj is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Business tenant not found"
+            )
+
+    u_count = (
+        await session.execute(
+            select(func.count(User.id)).where(User.business_id == business_obj.id)
+        )
+    ).scalar_one_or_none() or 0
+
+    c_count = (
+        await session.execute(
+            select(func.count(Customer.id)).where(Customer.business_id == business_obj.id)
+        )
+    ).scalar_one_or_none() or 0
+
+    o_count = (
+        await session.execute(
+            select(func.count(Order.id)).where(Order.business_id == business_obj.id)
+        )
+    ).scalar_one_or_none() or 0
+
+    rev_val = (
+        await session.execute(
+            select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.business_id == business_obj.id
+            )
+        )
+    ).scalar_one_or_none() or 0
+
+    return BusinessTenantDetail(
+        id=business_obj.id,
+        name=business_obj.name,
+        email=business_obj.email,
+        phone=business_obj.phone,
+        address=business_obj.address,
+        logo_url=business_obj.logo_url,
+        currency=business_obj.currency,
+        timezone=business_obj.timezone,
+        enabled_features=business_obj.enabled_features or [],
+        max_staff_users=business_obj.max_staff_users,
+        is_active=business_obj.is_active,
+        created_at=business_obj.created_at,
+        user_count=u_count,
+        customer_count=c_count,
+        order_count=o_count,
+        total_revenue=f"{Decimal(str(rev_val)):.2f}",
+    )
+
+
+async def update_business_entitlements(
+    session: AsyncSession, business_id: uuid.UUID, payload: UpdateBusinessEntitlements
+) -> BusinessTenantDetail:
+    result = await session.execute(select(Business).where(Business.id == business_id))
+    business_obj = result.scalar_one_or_none()
+    if business_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Business tenant not found"
+        )
+
+    business_obj.enabled_features = payload.enabled_features
+    business_obj.max_staff_users = payload.max_staff_users
+    await session.commit()
+    await session.refresh(business_obj)
+    return await get_business_tenant_detail(session, business_id, business_obj=business_obj)
+
+
+async def toggle_business_active(
+    session: AsyncSession, business_id: uuid.UUID
+) -> BusinessTenantDetail:
+    result = await session.execute(select(Business).where(Business.id == business_id))
+    business_obj = result.scalar_one_or_none()
+    if business_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Business tenant not found"
+        )
+
+    business_obj.is_active = not business_obj.is_active
+    await session.commit()
+    await session.refresh(business_obj)
+    return await get_business_tenant_detail(session, business_id, business_obj=business_obj)
+
+
+async def get_recent_platform_activity(
+    session: AsyncSession, limit: int = 20
+) -> list[PlatformActivityItem]:
+    items: list[PlatformActivityItem] = []
+
+    # Recent business registrations
+    recent_b = (
+        await session.execute(
+            select(Business).order_by(Business.created_at.desc()).limit(limit)
+        )
+    ).scalars().all()
+    for b in recent_b:
+        items.append(
+            PlatformActivityItem(
+                id=f"b-{b.id}",
+                type="BUSINESS_REGISTERED",
+                title="New Business Registered",
+                description=f"{b.name} signed up on FashionOS",
+                business_name=b.name,
+                timestamp=b.created_at,
+            )
+        )
+
+    # Sort all by timestamp descending
+    items.sort(key=lambda x: x.timestamp, reverse=True)
+    return items[:limit]

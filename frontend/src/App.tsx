@@ -22,7 +22,10 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { ProtectedRoute, PublicOnlyRoute } from "./routes/RouteGuards";
+import { SuperAdminPage } from "./pages/SuperAdminPage";
+import { TasksPage } from "./pages/TasksPage";
+import { TeamPage } from "./pages/TeamPage";
+import { ProtectedRoute, PublicOnlyRoute, SuperAdminRoute } from "./routes/RouteGuards";
 
 export function App() {
   return (
@@ -64,7 +67,12 @@ export function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/team" element={<TeamPage />} />
+          <Route element={<SuperAdminRoute />}>
+            <Route path="/admin" element={<SuperAdminPage />} />
+          </Route>
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/measurements" element={<MeasurementsPage />} />
           <Route

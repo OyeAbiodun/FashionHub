@@ -1,4 +1,5 @@
 import {
+  CheckSquare,
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
@@ -6,6 +7,7 @@ import {
   Menu,
   Ruler,
   Settings,
+  ShieldCheck,
   User,
   Users,
   X,
@@ -22,6 +24,7 @@ const navItems: Array<{
   to: string;
   label: string;
   icon: LucideIcon;
+  featureKey?: string;
   matches: (pathname: string) => boolean;
 }> = [
   {
@@ -31,15 +34,23 @@ const navItems: Array<{
     matches: (pathname) => pathname === "/dashboard",
   },
   {
+    to: "/tasks",
+    label: "Tasks",
+    icon: CheckSquare,
+    matches: (pathname) => pathname.startsWith("/tasks"),
+  },
+  {
     to: "/customers",
     label: "Customers",
     icon: Users,
+    featureKey: "customers",
     matches: (pathname) => pathname.startsWith("/customers"),
   },
   {
     to: "/measurements",
     label: "Measurements",
     icon: Ruler,
+    featureKey: "measurements",
     matches: (pathname) =>
       pathname.startsWith("/measurements") ||
       pathname.startsWith("/measurement-templates") ||
@@ -49,10 +60,18 @@ const navItems: Array<{
     to: "/orders",
     label: "Orders",
     icon: ClipboardList,
+    featureKey: "orders",
     matches: (pathname) =>
       pathname.startsWith("/orders") || pathname.startsWith("/invoices"),
   },
 ];
+
+const teamNavItem = {
+  to: "/team",
+  label: "Team",
+  icon: Users,
+  matches: (pathname: string) => pathname.startsWith("/team"),
+};
 
 const profileNavItem = {
   to: "/profile",
@@ -66,6 +85,13 @@ const settingsNavItem = {
   label: "Settings",
   icon: Settings,
   matches: (pathname: string) => pathname.startsWith("/settings"),
+};
+
+const adminNavItem = {
+  to: "/admin",
+  label: "Super Admin",
+  icon: ShieldCheck,
+  matches: (pathname: string) => pathname.startsWith("/admin"),
 };
 
 function pageContext(pathname: string): string {
@@ -87,6 +113,12 @@ function pageContext(pathname: string): string {
   }
   if (pathname.startsWith("/profile")) {
     return "Profile";
+  }
+  if (pathname.startsWith("/team")) {
+    return "Team";
+  }
+  if (pathname.startsWith("/admin")) {
+    return "Super Admin";
   }
   return "Dashboard";
 }
@@ -126,6 +158,7 @@ export function AppShell() {
           logoUrl={business?.logo_url}
           pathname={location.pathname}
           userName={userName}
+          userRole={user?.role}
           onLogout={() => void logout()}
         />
       </aside>
@@ -200,6 +233,7 @@ export function AppShell() {
               logoUrl={business?.logo_url}
               pathname={location.pathname}
               userName={userName}
+              userRole={user?.role}
               onLogout={() => void logout()}
             />
           </aside>
@@ -218,12 +252,14 @@ function SidebarContent({
   logoUrl,
   pathname,
   userName,
+  userRole,
   onLogout,
 }: {
   businessName: string;
   logoUrl?: string | null;
   pathname: string;
   userName: string;
+  userRole?: string;
   onLogout: () => void;
 }) {
   return (
@@ -269,8 +305,12 @@ function SidebarContent({
           );
         })}
         <div className="mt-6 border-t border-white/10 pt-4 space-y-1">
+          <SidebarLink item={teamNavItem} pathname={pathname} />
           <SidebarLink item={profileNavItem} pathname={pathname} />
           <SidebarLink item={settingsNavItem} pathname={pathname} />
+          {userRole === "SUPER_ADMIN" ? (
+            <SidebarLink item={adminNavItem} pathname={pathname} />
+          ) : null}
         </div>
       </nav>
       <div className="border-t border-white/10 p-3">

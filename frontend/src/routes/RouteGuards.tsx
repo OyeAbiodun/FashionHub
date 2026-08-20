@@ -25,3 +25,14 @@ export function PublicOnlyRoute() {
   }
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Outlet />;
 }
+
+export function SuperAdminRoute() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) {
+    return <SessionLoading />;
+  }
+  if (!isAuthenticated || user?.role !== "SUPER_ADMIN") {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Outlet />;
+}

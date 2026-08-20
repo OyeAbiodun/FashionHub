@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="Electron" agent="FashionOS" version="21.0.0" type="device">
+  <diagram id="fashionos-architecture" name="FashionOS Architecture">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- USER PERSONA LAYER -->
+        <mxCell id="group_users" value="USER PERSONA LAYER" style="swimlane;whiteSpace=wrap;html=1;fontStyle=1;startSize=30;fillColor=#f1f5f9;strokeColor=#cbd5e1;fontSize=14;fontColor=#334155;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="40" width="1500" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="u_super_admin" value="&lt;b&gt;Super Admin&lt;/b&gt;&lt;br&gt;(Platform Owner / Backoffice)" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#9333ea;fontColor=#581c87;rounded=1;shadow=1;" vertex="1" parent="group_users">
+          <mxGeometry x="60" y="45" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="u_business_admin" value="&lt;b&gt;Business Admin&lt;/b&gt;&lt;br&gt;(Tailoring House Owner)" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#d1fae5;strokeColor=#059669;fontColor=#064e3b;rounded=1;shadow=1;" vertex="1" parent="group_users">
+          <mxGeometry x="620" y="45" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="u_staff" value="&lt;b&gt;Staff User&lt;/b&gt;&lt;br&gt;(Tailor / Cutter / Sales Rep)" style="shape=rectangle;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontColor=#1e3a8a;rounded=1;shadow=1;" vertex="1" parent="group_users">
+          <mxGeometry x="1180" y="45" width="260" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- FRONTEND LAYER -->
+        <mxCell id="group_frontend" value="FRONTEND APPLICATION LAYER (React 18 + Vite + TypeScript + Vanilla CSS + React Query)" style="swimlane;whiteSpace=wrap;html=1;fontStyle=1;startSize=30;fillColor=#f8fafc;strokeColor=#cbd5e1;fontSize=14;fontColor=#1e293b;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="200" width="1500" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_guards" value="&lt;b&gt;Route Guards&lt;/b&gt;&lt;br&gt;ProtectedRoute &amp;amp; SuperAdminRoute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#64748b;fontColor=#0f172a;" vertex="1" parent="group_frontend">
+          <mxGeometry x="40" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_admin" value="&lt;b&gt;Super Admin Portal&lt;/b&gt;&lt;br&gt;/admin (KPIs &amp;amp; Entitlements)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#a855f7;fontColor=#581c87;" vertex="1" parent="group_frontend">
+          <mxGeometry x="280" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_team" value="&lt;b&gt;Team &amp;amp; RBAC Page&lt;/b&gt;&lt;br&gt;/team (Staff &amp;amp; Permissions)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1fae5;strokeColor=#10b981;fontColor=#064e3b;" vertex="1" parent="group_frontend">
+          <mxGeometry x="520" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_dashboard" value="&lt;b&gt;Dashboard&lt;/b&gt;&lt;br&gt;/dashboard (Metrics &amp;amp; Alerts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#075985;" vertex="1" parent="group_frontend">
+          <mxGeometry x="760" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_customers" value="&lt;b&gt;Customer Vault&lt;/b&gt;&lt;br&gt;/customers (Directory &amp;amp; Phone)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#075985;" vertex="1" parent="group_frontend">
+          <mxGeometry x="1000" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_measurements" value="&lt;b&gt;Measurement Vault&lt;/b&gt;&lt;br&gt;/measurements &amp;amp; Templates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#075985;" vertex="1" parent="group_frontend">
+          <mxGeometry x="1240" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_orders" value="&lt;b&gt;Orders &amp;amp; Production Pipeline&lt;/b&gt;&lt;br&gt;/orders (Garments &amp;amp; Status Transitions)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#f59e0b;fontColor=#78350f;" vertex="1" parent="group_frontend">
+          <mxGeometry x="280" y="120" width="340" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_invoices" value="&lt;b&gt;Invoices &amp;amp; Payments&lt;/b&gt;&lt;br&gt;/invoices (Decimal Financials &amp;amp; Receipts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#f59e0b;fontColor=#78350f;" vertex="1" parent="group_frontend">
+          <mxGeometry x="640" y="120" width="340" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_profile" value="&lt;b&gt;Profile &amp;amp; Password Management&lt;/b&gt;&lt;br&gt;/profile (Branding Logo &amp;amp; Security)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#64748b;fontColor=#0f172a;" vertex="1" parent="group_frontend">
+          <mxGeometry x="1000" y="120" width="460" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_client_api" value="&lt;b&gt;HTTP Client (Axios + Credentials Cookie Handler)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#0f172a;fontColor=#ffffff;fontStyle=1;" vertex="1" parent="group_frontend">
+          <mxGeometry x="40" y="190" width="1420" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- BACKEND API LAYER -->
+        <mxCell id="group_backend" value="BACKEND API LAYER (FastAPI + Async Python + Pydantic + Uvicorn)" style="swimlane;whiteSpace=wrap;html=1;fontStyle=1;startSize=30;fillColor=#f1f5f9;strokeColor=#cbd5e1;fontSize=14;fontColor=#0f172a;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="490" width="1500" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="be_sec" value="&lt;b&gt;Security &amp;amp; Auth Dependencies&lt;/b&gt;&lt;br&gt;get_current_user | get_current_super_admin | require_permission" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#ef4444;fontColor=#991b1b;" vertex="1" parent="group_backend">
+          <mxGeometry x="40" y="45" width="460" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="be_routes_admin" value="&lt;b&gt;Admin Router&lt;/b&gt;&lt;br&gt;/api/v1/admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#a855f7;fontColor=#581c87;" vertex="1" parent="group_backend">
+          <mxGeometry x="520" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="be_routes_team" value="&lt;b&gt;Team Router&lt;/b&gt;&lt;br&gt;/api/v1/team" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1fae5;strokeColor=#10b981;fontColor=#064e3b;" vertex="1" parent="group_backend">
+          <mxGeometry x="760" y="45" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="be_routes_auth" value="&lt;b&gt;Auth &amp;amp; Business Router&lt;/b&gt;&lt;br&gt;/api/v1/auth | /api/v1/business" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e2e8f0;strokeColor=#64748b;fontColor=#0f172a;" vertex="1" parent="group_backend">
+          <mxGeometry x="1000" y="45" width="460" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="be_routes_domain" value="&lt;b&gt;Domain API Routers&lt;/b&gt;&lt;br&gt;/customers | /measurements | /orders | /finances | /dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#075985;" vertex="1" parent="group_backend">
+          <mxGeometry x="40" y="115" width="1420" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="be_services" value="&lt;b&gt;Business Service Logic Layer&lt;/b&gt;&lt;br&gt;admin_service | team_service | auth_service | customer_service | order_service | finance_service | measurement_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0284c7;strokeColor=#0284c7;fontColor=#ffffff;fontStyle=1;" vertex="1" parent="group_backend">
+          <mxGeometry x="40" y="180" width="1420" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- DATABASE & STORAGE LAYER -->
+        <mxCell id="group_database" value="DATA &amp;amp; PERSISTENCE LAYER (PostgreSQL + Async SQLAlchemy ORM + Alembic Migrations)" style="swimlane;whiteSpace=wrap;html=1;fontStyle=1;startSize=30;fillColor=#f8fafc;strokeColor=#cbd5e1;fontSize=14;fontColor=#0f172a;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="800" width="1500" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="db_isolation" value="&lt;b&gt;Multi-Tenant Scoping Engine (Strict business_id Query Filtering on Every Tenant Record)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#059669;strokeColor=#059669;fontColor=#ffffff;fontStyle=1;" vertex="1" parent="group_database">
+          <mxGeometry x="40" y="45" width="1420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_business" value="&lt;b&gt;businesses&lt;/b&gt;&lt;br&gt;enabled_features&lt;br&gt;max_staff_users&lt;br&gt;is_active" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f3e8ff;strokeColor=#a855f7;fontColor=#581c87;" vertex="1" parent="group_database">
+          <mxGeometry x="40" y="100" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_users" value="&lt;b&gt;users&lt;/b&gt;&lt;br&gt;role (SUPER/ADMIN/STAFF)&lt;br&gt;permissions&lt;br&gt;password_hash" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#d1fae5;strokeColor=#10b981;fontColor=#064e3b;" vertex="1" parent="group_database">
+          <mxGeometry x="260" y="100" width="220" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_customers" value="&lt;b&gt;customers&lt;/b&gt;&lt;br&gt;phone (normalized)&lt;br&gt;archived_at (soft delete)" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#075985;" vertex="1" parent="group_database">
+          <mxGeometry x="500" y="100" width="220" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_measurements" value="&lt;b&gt;measurement_templates&lt;/b&gt;&lt;br&gt;&amp;amp; &lt;b&gt;measurement_profiles&lt;/b&gt;" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#075985;" vertex="1" parent="group_database">
+          <mxGeometry x="740" y="100" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_orders" value="&lt;b&gt;orders, order_items&lt;/b&gt;&lt;br&gt;&amp;amp; &lt;b&gt;order_status_history&lt;/b&gt;" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fef3c7;strokeColor=#f59e0b;fontColor=#78350f;" vertex="1" parent="group_database">
+          <mxGeometry x="1000" y="100" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_finances" value="&lt;b&gt;invoices &amp;amp; payments&lt;/b&gt;&lt;br&gt;(Decimal fixed precision)" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#fef3c7;strokeColor=#f59e0b;fontColor=#78350f;" vertex="1" parent="group_database">
+          <mxGeometry x="1260" y="100" width="200" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- CONNECTIONS & ARROWS -->
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#9333ea;" edge="1" parent="1" source="u_super_admin" target="fe_admin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#059669;" edge="1" parent="1" source="u_business_admin" target="fe_team">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#2563eb;" edge="1" parent="1" source="u_staff" target="fe_orders">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0f172a;" edge="1" parent="1" source="fe_client_api" target="be_sec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0284c7;" edge="1" parent="1" source="be_services" target="db_isolation">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -30,6 +30,9 @@ class BusinessPublic(BaseModel):
     timezone: str
     invoice_notes: str | None
     invoice_footer: str | None
+    enabled_features: list[str] = Field(default_factory=list)
+    max_staff_users: int = 10
+    is_active: bool = True
 
 
 class BusinessUpdate(BaseModel):

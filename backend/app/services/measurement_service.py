@@ -88,6 +88,38 @@ def seed_default_templates_for_business(business: Business) -> None:
             )
 
 
+async def ensure_system_templates(session: AsyncSession) -> None:
+    result = await session.execute(
+        select(MeasurementTemplate).where(MeasurementTemplate.is_system_template.is_(True))
+    )
+    existing = result.scalars().all()
+    if existing:
+        return
+    for name, garment_type, fields in SYSTEM_MEASUREMENT_TEMPLATES:
+        template = MeasurementTemplate(
+            business_id=None,
+            name=name,
+            garment_type=garment_type,
+            description="System default measurement template.",
+            is_system_template=True,
+            is_active=True,
+        )
+        for position, field_name in enumerate(fields, start=1):
+            template.fields.append(
+                MeasurementTemplateField(
+                    field_name=field_name,
+                    field_key=normalize_field_key(field_name),
+                    field_type=MeasurementFieldType.NUMBER,
+                    position=position,
+                    is_required=True,
+                    unit_hint="inches",
+                    is_active=True,
+                )
+            )
+        session.add(template)
+    await session.commit()
+
+
 async def list_templates(
     session: AsyncSession,
     business: Business,

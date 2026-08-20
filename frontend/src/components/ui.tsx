@@ -334,8 +334,40 @@ export function LoadingBlock({
   );
 }
 
+export const selectStyles =
+  "mt-2 h-10 w-full rounded-lg border border-border bg-white px-3 text-ink shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-500 text-sm";
+
+export function MetricCard({
+  label,
+  value,
+  subtext,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  subtext?: string;
+  icon?: LucideIcon;
+}) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted">
+          {label}
+        </span>
+        {Icon ? (
+          <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700 border border-emerald-100">
+            <Icon className="h-4 w-4" />
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-2 text-2xl font-bold text-ink">{value}</div>
+      {subtext ? <p className="mt-1 text-xs text-muted">{subtext}</p> : null}
+    </Card>
+  );
+}
+
 export function Dialog({
-  open,
+  open = true,
   title,
   description,
   onClose,
@@ -343,7 +375,7 @@ export function Dialog({
   footer,
   danger = false,
 }: {
-  open: boolean;
+  open?: boolean;
   title: string;
   description?: string;
   onClose: () => void;

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text
+from sqlalchemy import JSON, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -13,6 +13,16 @@ if TYPE_CHECKING:
     from app.models.measurement import MeasurementProfile, MeasurementTemplate
     from app.models.order import Order
     from app.models.user import User
+
+DEFAULT_BUSINESS_FEATURES = [
+    "customers",
+    "measurements",
+    "templates",
+    "orders",
+    "invoices",
+    "reports",
+    "team",
+]
 
 
 class Business(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -31,6 +41,17 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     invoice_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     invoice_footer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled_features: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=lambda: list(DEFAULT_BUSINESS_FEATURES),
+    )
+    max_staff_users: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10, server_default="10"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     users: Mapped[list[User]] = relationship(
         back_populates="business", cascade="all, delete-orphan"

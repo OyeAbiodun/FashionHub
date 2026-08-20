@@ -1,4 +1,4 @@
-export type UserRole = "OWNER" | "STAFF";
+export type UserRole = "SUPER_ADMIN" | "BUSINESS_ADMIN" | "OWNER" | "STAFF";
 
 export interface Business {
   id: string;
@@ -11,6 +11,9 @@ export interface Business {
   timezone: string;
   invoice_notes: string | null;
   invoice_footer: string | null;
+  enabled_features?: string[];
+  max_staff_users?: number;
+  is_active?: boolean;
 }
 
 export interface BusinessSettingsInput {
@@ -33,6 +36,7 @@ export interface User {
   email: string;
   phone: string | null;
   role: UserRole;
+  permissions?: string[] | null;
   is_active: boolean;
 }
 
