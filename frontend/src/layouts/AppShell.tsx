@@ -1,4 +1,5 @@
 import {
+  Calendar as CalendarIcon,
   CheckSquare,
   ChevronRight,
   ClipboardList,
@@ -32,6 +33,12 @@ const navItems: Array<{
     label: "Dashboard",
     icon: LayoutDashboard,
     matches: (pathname) => pathname === "/dashboard",
+  },
+  {
+    to: "/calendar",
+    label: "Calendar",
+    icon: CalendarIcon,
+    matches: (pathname) => pathname.startsWith("/calendar"),
   },
   {
     to: "/tasks",

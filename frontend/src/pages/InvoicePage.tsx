@@ -1,4 +1,4 @@
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import { useInvoice } from "../hooks/useInvoices";
@@ -35,8 +35,27 @@ export function InvoicePage() {
   }
 
   const currency = invoice.business.currency || "NGN";
+  const customerPhone = invoice.customer.phone
+    ? invoice.customer.phone.replace(/[^0-9]/g, "")
+    : "";
+
+  const whatsappMessage = encodeURIComponent(
+    `Hello ${invoice.customer.name},\n\nHere is your invoice receipt from *${invoice.business.name}*:\n` +
+      `Invoice #: ${invoice.invoice_number}\n` +
+      `Order #: ${invoice.order.order_number}\n` +
+      `Total: ${formatMoney(invoice.financial_summary.total, currency)}\n` +
+      `Paid: ${formatMoney(invoice.financial_summary.amount_paid, currency)}\n` +
+      `Balance Due: ${formatMoney(invoice.financial_summary.outstanding_balance, currency)}\n\n` +
+      `Thank you for patronizing ${invoice.business.name}!`
+  );
+
+  const whatsappUrl = customerPhone
+    ? `https://wa.me/${customerPhone}?text=${whatsappMessage}`
+    : `https://wa.me/?text=${whatsappMessage}`;
+
   return (
     <section className="invoice-page mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      {/* Top Action Bar - Hidden during printing */}
       <div className="print-hide mb-6 flex flex-wrap items-center justify-between gap-3">
         <Link
           className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
@@ -44,16 +63,29 @@ export function InvoicePage() {
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to order
         </Link>
-        <button
-          className={buttonStyles()}
-          type="button"
-          onClick={() => window.print()}
-        >
-          <Printer className="h-4 w-4" aria-hidden="true" /> Print Invoice
-        </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonStyles({ variant: "outline" })}
+          >
+            <Share2 className="h-4 w-4 text-emerald-600" aria-hidden="true" /> Share Receipt via WhatsApp
+          </a>
+
+          <button
+            className={buttonStyles({ variant: "primary" })}
+            type="button"
+            onClick={() => window.print()}
+          >
+            <Printer className="h-4 w-4" aria-hidden="true" /> Print / Save PDF Receipt
+          </button>
+        </div>
       </div>
 
-      <article className="invoice-document rounded-xl border border-border bg-white p-6 shadow-card sm:p-10 lg:p-12">
+      {/* Printable Invoice Card Container */}
+      <article className="invoice-document rounded-xl border border-border bg-white p-6 shadow-card sm:p-10 lg:p-12 print:shadow-none print:border-none print:p-0">
         <header className="flex flex-col justify-between gap-8 border-b-2 border-ink pb-8 sm:flex-row">
           <div>
             <BusinessLogo
@@ -62,7 +94,7 @@ export function InvoicePage() {
               logoUrl={invoice.business.logo_url}
             />
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              Fashion business
+              Fashion Studio
             </p>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
               {invoice.business.name}
@@ -77,12 +109,12 @@ export function InvoicePage() {
           </div>
           <div className="sm:text-right">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
-              Invoice
+              Invoice Receipt
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">
               {invoice.invoice_number}
             </h2>
-            <div className="mt-3 flex justify-start sm:justify-end">
+            <div className="mt-3 flex justify-start sm:justify-end print:hidden">
               <StatusBadge
                 status={invoice.status}
                 label={formatStatus(invoice.status)}
@@ -100,9 +132,9 @@ export function InvoicePage() {
         <div className="grid gap-8 border-b border-border py-8 sm:grid-cols-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              Bill to
+              Bill To Customer
             </p>
-            <p className="mt-2 font-semibold">{invoice.customer.name}</p>
+            <p className="mt-2 font-semibold text-ink text-base">{invoice.customer.name}</p>
             <ContactLines
               values={[
                 invoice.customer.address,
@@ -113,11 +145,11 @@ export function InvoicePage() {
           </div>
           <div className="sm:text-right">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              Order
+              Order References
             </p>
-            <p className="mt-2 font-semibold">{invoice.order.order_number}</p>
+            <p className="mt-2 font-semibold text-ink text-base">#{invoice.order.order_number}</p>
             <p className="text-sm text-stone-600">
-              Order date: {formatDate(invoice.order.order_date)}
+              Order Date: {formatDate(invoice.order.order_date)}
             </p>
           </div>
         </div>
@@ -126,10 +158,10 @@ export function InvoicePage() {
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-ink bg-stone-50 text-xs uppercase tracking-wide text-muted">
-                <th className="px-3 py-3">Description</th>
+                <th className="px-3 py-3">Garment Item / Description</th>
                 <th className="px-3 py-3 text-right">Qty</th>
-                <th className="px-3 py-3 text-right">Price</th>
-                <th className="px-3 py-3 text-right">Amount</th>
+                <th className="px-3 py-3 text-right">Unit Price</th>
+                <th className="px-3 py-3 text-right">Line Total</th>
               </tr>
             </thead>
             <tbody>
@@ -139,7 +171,7 @@ export function InvoicePage() {
                   key={`${item.garment_type}-${index}`}
                 >
                   <td className="px-3 py-4">
-                    <strong>{item.garment_type}</strong>
+                    <strong className="text-ink">{item.garment_type}</strong>
                     {item.description ? (
                       <span className="mt-1 block text-stone-600">
                         {item.description}
@@ -159,7 +191,7 @@ export function InvoicePage() {
           </table>
         </div>
 
-        <dl className="ml-auto mt-8 max-w-sm space-y-3 rounded-xl bg-stone-50 p-5 text-sm">
+        <dl className="ml-auto mt-8 max-w-sm space-y-3 rounded-xl bg-stone-50 p-5 text-sm print:bg-stone-100/50">
           <SummaryRow
             label="Subtotal"
             value={formatMoney(invoice.financial_summary.subtotal, currency)}
@@ -172,7 +204,7 @@ export function InvoicePage() {
             )}
           />
           <SummaryRow
-            label="Total"
+            label="Grand Total"
             value={formatMoney(invoice.financial_summary.total, currency)}
             strong
           />
@@ -189,22 +221,25 @@ export function InvoicePage() {
             strong
           />
         </dl>
+
         {invoice.notes ? (
           <div className="mt-8 border-t border-stone-200 pt-5">
-            <h4 className="font-semibold">Notes</h4>
+            <h4 className="font-semibold text-ink text-sm">Invoice Notes</h4>
             <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">
               {invoice.notes}
             </p>
           </div>
         ) : null}
+
         {invoice.business.invoice_notes ? (
           <div className="mt-6 border-t border-stone-200 pt-5">
-            <h4 className="font-semibold">Payment information</h4>
+            <h4 className="font-semibold text-ink text-sm">Payment Instructions</h4>
             <p className="mt-2 whitespace-pre-wrap text-sm text-stone-600">
               {invoice.business.invoice_notes}
             </p>
           </div>
         ) : null}
+
         {invoice.business.invoice_footer ? (
           <footer className="mt-8 border-t border-stone-200 pt-5 text-center text-sm text-stone-500 whitespace-pre-wrap">
             {invoice.business.invoice_footer}
@@ -236,7 +271,7 @@ function SummaryRow({
 }) {
   return (
     <div
-      className={`flex justify-between gap-5 ${strong ? "border-t border-stone-200 pt-2 text-base font-semibold" : ""}`}
+      className={`flex justify-between gap-5 ${strong ? "border-t border-stone-200 pt-2 text-base font-semibold text-ink" : ""}`}
     >
       <dt>{label}</dt>
       <dd>{value}</dd>

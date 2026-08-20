@@ -70,3 +70,21 @@ class DashboardAlert(BaseModel):
     order_id: UUID
     customer_id: UUID
     created_from: date
+
+
+class DashboardCalendarEventType(StrEnum):
+    ORDER_DUE = "ORDER_DUE"
+    ORDER_FITTING = "ORDER_FITTING"
+    TASK_DUE = "TASK_DUE"
+
+
+class DashboardCalendarEvent(BaseModel):
+    id: str
+    event_type: DashboardCalendarEventType
+    title: str
+    event_date: date
+    status: str
+    customer_name: str | None = None
+    order_id: UUID | None = None
+    task_id: UUID | None = None
+    priority: str | None = None

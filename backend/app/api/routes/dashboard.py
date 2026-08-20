@@ -8,11 +8,13 @@ from app.core.database import get_db_session
 from app.models.business import Business
 from app.schemas.dashboard import (
     DashboardAlert,
+    DashboardCalendarEvent,
     DashboardOrderItem,
     DashboardPaymentItem,
     DashboardSummary,
 )
 from app.services.dashboard_service import (
+    get_calendar_events,
     get_dashboard_summary,
     get_due_orders,
     get_operational_alerts,
@@ -29,6 +31,16 @@ async def dashboard_summary(
     business: Annotated[Business, Depends(get_current_business)],
 ) -> DashboardSummary:
     return await get_dashboard_summary(session, business)
+
+
+@router.get("/calendar", response_model=list[DashboardCalendarEvent])
+async def dashboard_calendar(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+    year: Annotated[int, Query(ge=2020, le=2100)] = 2026,
+    month: Annotated[int, Query(ge=1, le=12)] = 8,
+) -> list[DashboardCalendarEvent]:
+    return await get_calendar_events(session, business, year, month)
 
 
 @router.get("/due-orders", response_model=list[DashboardOrderItem])

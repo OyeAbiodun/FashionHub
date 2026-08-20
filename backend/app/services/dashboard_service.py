@@ -323,3 +323,74 @@ async def get_operational_alerts(
                 )
     alerts.sort(key=lambda alert: (ALERT_PRIORITY[alert.type], alert.created_from))
     return alerts[:limit]
+
+
+async def get_calendar_events(
+    session: AsyncSession, business: Business, year: int, month: int
+) -> list[DashboardCalendarEvent]:
+    from app.models.task import Task
+    from app.schemas.dashboard import DashboardCalendarEvent, DashboardCalendarEventType
+
+    # Fetch orders due in the specified month/year range
+    orders_stmt = (
+        select(Order)
+        .options(joinedload(Order.customer), selectinload(Order.items))
+        .where(
+            Order.business_id == business.id,
+            Order.status != OrderStatus.CANCELLED,
+            func.extract("year", Order.due_date) == year,
+            func.extract("month", Order.due_date) == month,
+        )
+    )
+    orders = (await session.execute(orders_stmt)).scalars().unique().all()
+
+    # Fetch tasks due in the specified month/year range
+    tasks_stmt = (
+        select(Task)
+        .where(
+            Task.business_id == business.id,
+            Task.due_at.is_not(None),
+            func.extract("year", Task.due_at) == year,
+            func.extract("month", Task.due_at) == month,
+        )
+    )
+    tasks = (await session.execute(tasks_stmt)).scalars().all()
+
+    events: list[DashboardCalendarEvent] = []
+
+    for order in orders:
+        c_name = customer_name(order.customer) if order.customer else "Guest Customer"
+        g_summary = garment_summary(order.items)
+        ev_type = (
+            DashboardCalendarEventType.ORDER_FITTING
+            if order.status == OrderStatus.FITTING
+            else DashboardCalendarEventType.ORDER_DUE
+        )
+        events.append(
+            DashboardCalendarEvent(
+                id=f"order:{order.id}",
+                event_type=ev_type,
+                title=f"#{order.order_number} - {c_name} ({g_summary})",
+                event_date=order.due_date,
+                status=order.status.value,
+                customer_name=c_name,
+                order_id=order.id,
+            )
+        )
+
+    for task in tasks:
+        if task.due_at:
+            events.append(
+                DashboardCalendarEvent(
+                    id=f"task:{task.id}",
+                    event_type=DashboardCalendarEventType.TASK_DUE,
+                    title=f"Task: {task.title}",
+                    event_date=task.due_at.date(),
+                    status=task.status.value,
+                    task_id=task.id,
+                    priority=task.priority.value,
+                )
+            )
+
+    events.sort(key=lambda e: e.event_date)
+    return events
