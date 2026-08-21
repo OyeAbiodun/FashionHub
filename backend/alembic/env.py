@@ -14,6 +14,8 @@ from app.models.measurement import (  # noqa: F401  # noqa: F401
     MeasurementTemplateField,
     MeasurementValue,
 )
+from app.models.password_reset import PasswordResetToken  # noqa: F401
+from app.models.password_reset_request import PasswordResetRequest  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 config = context.config

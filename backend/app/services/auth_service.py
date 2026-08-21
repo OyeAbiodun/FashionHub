@@ -1,10 +1,12 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from hmac import digest
 from secrets import token_urlsafe
+from urllib.parse import urlencode
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,9 +14,15 @@ from sqlalchemy.orm import selectinload
 from app.core.security import create_token, hash_password, verify_password
 from app.models.business import Business
 from app.models.password_reset import PasswordResetToken
+from app.models.password_reset_request import PasswordResetRequest
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.schemas.user import ChangePasswordRequest, UserUpdate
+from app.services.email_service import (
+    EmailDeliveryError,
+    TransactionalEmail,
+    get_transactional_email_service,
+)
 from app.services.measurement_service import seed_default_templates_for_business
 
 AUTH_ERROR = "Invalid email or password"
@@ -95,14 +103,17 @@ def create_auth_tokens(user: User, settings) -> tuple[str, str]:
 
 
 async def request_password_reset(
-    session: AsyncSession, email: str, settings
-) -> tuple[str, str | None]:
-    user = await get_user_by_email(session, email)
+    session: AsyncSession, email: str, settings, source: str = "unknown"
+) -> str:
     generic_msg = (
         "If an account exists with this email, password reset instructions have been generated."
     )
+    if not await _record_reset_request_if_allowed(session, email, source, settings):
+        return generic_msg
+
+    user = await get_user_by_email(session, email)
     if user is None or not user.is_active or not user.business.is_active:
-        return generic_msg, None
+        return generic_msg
     raw_token = token_urlsafe(32)
     await session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
     session.add(
@@ -113,9 +124,17 @@ async def request_password_reset(
         )
     )
     await session.commit()
-    # Delivery is intentionally separate from token issuance. Tests call this service directly;
-    # HTTP responses never return the raw credential until a mail/SMS provider is integrated.
-    return generic_msg, raw_token
+    message = build_password_reset_email(user, raw_token, settings)
+    try:
+        await get_transactional_email_service(settings).send(message)
+    except EmailDeliveryError:
+        # Do not retain a credential that was never delivered and do not expose provider details.
+        await session.execute(
+            delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+        )
+        await session.commit()
+        return generic_msg
+    return generic_msg
 
 
 async def reset_password_with_token(
@@ -150,6 +169,98 @@ async def reset_password_with_token(
 
 def _hash_reset_token(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
+
+
+async def _record_reset_request_if_allowed(
+    session: AsyncSession, email: str, source: str, settings
+) -> bool:
+    now = datetime.now(UTC)
+    window_start = now - timedelta(minutes=settings.password_reset_rate_limit_window_minutes)
+    identity_hash = _hash_reset_request_value(email.strip().lower(), settings)
+    source_hash = _hash_reset_request_value(source, settings)
+    await session.execute(
+        delete(PasswordResetRequest).where(PasswordResetRequest.requested_at < window_start)
+    )
+    identity_count = (
+        await session.execute(
+            select(func.count()).select_from(PasswordResetRequest).where(
+                PasswordResetRequest.identity_hash == identity_hash,
+                PasswordResetRequest.requested_at >= window_start,
+            )
+        )
+    ).scalar_one()
+    source_count = (
+        await session.execute(
+            select(func.count()).select_from(PasswordResetRequest).where(
+                PasswordResetRequest.source_hash == source_hash,
+                PasswordResetRequest.requested_at >= window_start,
+            )
+        )
+    ).scalar_one()
+    if (
+        identity_count >= settings.password_reset_rate_limit_count
+        or source_count >= settings.password_reset_ip_rate_limit_count
+    ):
+        await session.commit()
+        return False
+    session.add(
+        PasswordResetRequest(
+            identity_hash=identity_hash,
+            source_hash=source_hash,
+            requested_at=now,
+        )
+    )
+    await session.commit()
+    return True
+
+
+def _hash_reset_request_value(value: str, settings) -> str:
+    return digest(settings.jwt_secret_key.encode("utf-8"), value.encode("utf-8"), "sha256").hex()
+
+
+def build_password_reset_email(user: User, raw_token: str, settings) -> TransactionalEmail:
+    from html import escape
+
+    business = user.business
+    reset_url = f"{settings.frontend_origin}/reset-password?{urlencode({'token': raw_token})}"
+    business_name = escape(business.name)
+    contact_details = [
+        business.phone,
+        business.email,
+        business.address,
+        business.invoice_notes,
+        business.invoice_footer,
+    ]
+    contact_text = " · ".join(value for value in contact_details if value)
+    escaped_contact = escape(contact_text)
+    logo = (
+        f'<img src="{escape(business.logo_url, quote=True)}" alt="{business_name}" '
+        'style="max-height:48px;max-width:180px;margin-bottom:12px;" />'
+        if business.logo_url
+        else ""
+    )
+    subject = f"Reset your {business.name} password"
+    text = (
+        f"{business.name}\n\n"
+        "A password reset was requested for your FashionOS account. "
+        f"Use this link within 15 minutes:\n{reset_url}\n\n"
+        "If you did not request this, you can safely ignore this email.\n\n"
+        f"{contact_text}"
+    )
+    html = (
+        '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">'
+        f'<div style="max-width:560px;margin:0 auto;padding:24px;">{logo}'
+        f"<h1 style=\"font-size:22px;\">{business_name}</h1>"
+        "<p>A password reset was requested for your FashionOS account.</p>"
+        f'<p><a href="{escape(reset_url, quote=True)}" '
+        'style="display:inline-block;padding:12px 18px;background:#047857;color:#fff;'
+        'text-decoration:none;border-radius:6px;">Reset password</a></p>'
+        "<p>This link expires in 15 minutes and can be used once.</p>"
+        "<p>If you did not request this, you can safely ignore this email.</p>"
+        f'<hr style="border:0;border-top:1px solid #e5e7eb;"><p style="font-size:12px;">'
+        f"{escaped_contact}</p></div></body></html>"
+    )
+    return TransactionalEmail(to=user.email, subject=subject, text=text, html=html)
 
 
 async def update_user_profile(

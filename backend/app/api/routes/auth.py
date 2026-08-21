@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
@@ -138,10 +138,12 @@ async def change_password(
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(
     payload: ForgotPasswordRequest,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ForgotPasswordResponse:
-    message, _ = await request_password_reset(session, payload.email, settings)
+    source = request.client.host if request.client else "unknown"
+    message = await request_password_reset(session, payload.email, settings, source)
     return ForgotPasswordResponse(message=message)
 
 

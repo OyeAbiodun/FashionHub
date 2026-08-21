@@ -14,6 +14,10 @@ def production_settings(**overrides: object) -> Settings:
         ),
         "JWT_SECRET_KEY": "a-production-secret-that-is-at-least-32-characters",
         "COOKIE_SECURE": True,
+        "EMAIL_PROVIDER": "resend",
+        "EMAIL_API_KEY": "re_platform_secret",
+        "EMAIL_FROM_ADDRESS": "no-reply@fashionos.example",
+        "EMAIL_FROM_NAME": "FashionOS",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[arg-type]
@@ -31,6 +35,8 @@ def test_managed_postgres_url_is_normalized_for_asyncpg() -> None:
     [
         ({"DEBUG": True}, "DEBUG must be false"),
         ({"COOKIE_SECURE": False}, "COOKIE_SECURE must be true"),
+        ({"EMAIL_PROVIDER": "capture"}, "EMAIL_PROVIDER must be a real transactional provider"),
+        ({"EMAIL_API_KEY": ""}, "EMAIL_API_KEY must be configured"),
         ({"JWT_SECRET_KEY": "too-short"}, "at least 32 characters"),
         (
             {"JWT_SECRET_KEY": "replace-with-a-secret-manager-value-of-at-least-32-characters"},

@@ -13,10 +13,12 @@ from app.core.measurement_defaults import SYSTEM_MEASUREMENT_TEMPLATES, normaliz
 from app.main import app
 from app.models.base import Base
 from app.models.measurement import MeasurementTemplate, MeasurementTemplateField
+from app.services.email_service import capture_email_provider
 
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
+    capture_email_provider.clear()
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with engine.begin() as connection:
@@ -57,6 +59,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
         yield test_client
     app.dependency_overrides.clear()
     del app.state.test_session_factory
+    capture_email_provider.clear()
     await engine.dispose()
 
 

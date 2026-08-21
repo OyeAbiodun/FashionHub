@@ -26,6 +26,22 @@ class Settings(BaseSettings):
     cookie_samesite: Literal["lax", "strict", "none"] = Field(
         default="lax", alias="COOKIE_SAMESITE"
     )
+    email_provider: Literal["capture", "resend"] = Field(default="capture", alias="EMAIL_PROVIDER")
+    email_api_key: str | None = Field(default=None, alias="EMAIL_API_KEY")
+    email_from_address: str = Field(
+        default="no-reply@fashionos.example", alias="EMAIL_FROM_ADDRESS"
+    )
+    email_from_name: str = Field(default="FashionOS", alias="EMAIL_FROM_NAME")
+    email_timeout_seconds: int = Field(default=10, ge=1, le=60, alias="EMAIL_TIMEOUT_SECONDS")
+    password_reset_rate_limit_count: int = Field(
+        default=3, ge=1, le=20, alias="PASSWORD_RESET_RATE_LIMIT_COUNT"
+    )
+    password_reset_rate_limit_window_minutes: int = Field(
+        default=15, ge=1, le=60, alias="PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES"
+    )
+    password_reset_ip_rate_limit_count: int = Field(
+        default=10, ge=1, le=100, alias="PASSWORD_RESET_IP_RATE_LIMIT_COUNT"
+    )
 
     @field_validator("jwt_secret_key")
     @classmethod
@@ -65,6 +81,10 @@ class Settings(BaseSettings):
             raise ValueError("DEBUG must be false in production")
         if not self.cookie_secure:
             raise ValueError("COOKIE_SECURE must be true in production")
+        if self.email_provider == "capture":
+            raise ValueError("EMAIL_PROVIDER must be a real transactional provider in production")
+        if not self.email_api_key:
+            raise ValueError("EMAIL_API_KEY must be configured in production")
         if len(self.jwt_secret_key) < 32:
             raise ValueError("JWT_SECRET_KEY must contain at least 32 characters in production")
         if "replace-with" in self.jwt_secret_key.lower() or self.jwt_secret_key == (

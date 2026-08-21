@@ -7,7 +7,7 @@ from app.main import settings as app_settings
 from app.models.business import Business
 from app.models.password_reset import PasswordResetToken
 from app.models.user import User
-from app.services.auth_service import request_password_reset
+from app.services.email_service import capture_email_provider
 
 
 async def test_health_endpoint_succeeds(client):
@@ -177,12 +177,7 @@ async def test_forgot_and_reset_password_flow(client):
     assert forgot_resp.status_code == 200
     assert forgot_resp.json() == forgot_unknown.json()
 
-    # Delivery adapters receive the raw token transiently; the HTTP API never exposes it.
-    async with client._transport.app.state.test_session_factory() as session:
-        _, reset_token = await request_password_reset(
-            session, "resetuser@example.com", get_settings()
-        )
-    assert reset_token is not None
+    reset_token = capture_email_provider.messages[0].text.split("token=")[1].split("\n")[0]
 
     # Reset password with invalid token fails
     invalid_reset = await client.post(
@@ -221,10 +216,12 @@ async def test_forgot_and_reset_password_flow(client):
 
 async def test_expired_password_reset_token_is_rejected(client):
     await client.post("/api/v1/auth/register", json=register_payload("expiredreset@example.com"))
+    response = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "expiredreset@example.com"}
+    )
+    assert response.status_code == 200
+    raw_token = capture_email_provider.messages[0].text.split("token=")[1].split("\n")[0]
     async with client._transport.app.state.test_session_factory() as session:
-        _, raw_token = await request_password_reset(
-            session, "expiredreset@example.com", get_settings()
-        )
         reset_record = (await session.execute(select(PasswordResetToken))).scalar_one()
         from datetime import UTC, datetime, timedelta
 
