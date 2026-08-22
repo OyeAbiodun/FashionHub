@@ -108,7 +108,7 @@ async def postgres_context() -> AsyncGenerator[PostgresContext, None]:
         if identity[0] != "fashionos_test":
             pytest.fail(f"Refusing PostgreSQL tests against database {identity[0]!r}")
         revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "20260820_0013":
+        if revision != "20260822_0014":
             pytest.fail(f"PostgreSQL test database is not at head: {revision!r}")
 
     async def override_session() -> AsyncGenerator[AsyncSession, None]:

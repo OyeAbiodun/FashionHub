@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as adminApi from "../api/admin";
 import { renderWithAuth } from "../test/render";
@@ -13,12 +13,33 @@ vi.mock("../api/admin", async (importOriginal) => {
     fetchPlatformMetrics: vi.fn(),
     fetchAdminBusinesses: vi.fn(),
     fetchPlatformActivity: vi.fn(),
+    fetchPlatformEmailConfiguration: vi.fn(),
     updateBusinessEntitlements: vi.fn(),
+    updatePlatformEmailConfiguration: vi.fn(),
+    sendPlatformEmailTest: vi.fn(),
     toggleBusinessActive: vi.fn(),
   };
 });
 
 describe("SuperAdminPage", () => {
+  beforeEach(() => {
+    vi.mocked(adminApi.fetchPlatformEmailConfiguration).mockResolvedValue({
+      id: "email-config-1",
+      provider: "GMAIL",
+      enabled: true,
+      smtp_host: "smtp.gmail.com",
+      smtp_port: 587,
+      smtp_username: "platform@fashionos.test",
+      smtp_password_configured: true,
+      security_mode: "STARTTLS",
+      from_email: "platform@fashionos.test",
+      from_name: "FashionOS",
+      configured: true,
+      last_tested_at: null,
+      last_test_status: null,
+    });
+  });
+
   it("renders platform metrics and tenant directory table", async () => {
     vi.mocked(adminApi.fetchPlatformMetrics).mockResolvedValueOnce({
       total_businesses: 5,
@@ -62,6 +83,7 @@ describe("SuperAdminPage", () => {
     expect(screen.getByText("Super Admin Control Center")).toBeInTheDocument();
     expect(await screen.findByText("Lagos Bespoke Studio")).toBeInTheDocument();
     expect(screen.getByText("₦150000.00")).toBeInTheDocument();
+    expect(screen.getByText("Platform Settings — Email Configuration")).toBeInTheDocument();
   });
 
   it("opens entitlements editor dialog and saves updated features", async () => {
@@ -135,6 +157,46 @@ describe("SuperAdminPage", () => {
 
     await waitFor(() => {
       expect(adminApi.updateBusinessEntitlements).toHaveBeenCalled();
+    });
+  });
+
+  it("saves platform email settings without reusing the displayed secret", async () => {
+    const user = userEvent.setup();
+    vi.mocked(adminApi.fetchPlatformMetrics).mockResolvedValueOnce({
+      total_businesses: 0,
+      active_businesses: 0,
+      total_users: 1,
+      total_customers: 0,
+      total_orders: 0,
+      total_revenue: "0.00",
+    });
+    vi.mocked(adminApi.fetchAdminBusinesses).mockResolvedValueOnce({
+      items: [], total: 0, page: 1, page_size: 20,
+    });
+    vi.mocked(adminApi.fetchPlatformActivity).mockResolvedValueOnce([]);
+    vi.mocked(adminApi.updatePlatformEmailConfiguration).mockResolvedValueOnce({
+      id: "email-config-1",
+      provider: "GMAIL",
+      enabled: true,
+      smtp_host: "smtp.gmail.com",
+      smtp_port: 587,
+      smtp_username: "platform@fashionos.test",
+      smtp_password_configured: true,
+      security_mode: "STARTTLS",
+      from_email: "platform@fashionos.test",
+      from_name: "FashionOS",
+      configured: true,
+      last_tested_at: null,
+      last_test_status: null,
+    });
+
+    renderWithAuth(<SuperAdminPage />, { authenticated: true, route: "/admin" });
+    await user.click(await screen.findByRole("button", { name: /save configuration/i }));
+
+    await waitFor(() => {
+      expect(adminApi.updatePlatformEmailConfiguration).toHaveBeenCalledWith(
+        expect.objectContaining({ smtp_password: null })
+      );
     });
   });
 });

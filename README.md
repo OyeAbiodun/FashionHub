@@ -68,8 +68,10 @@ The integration fixture refuses to run unless `current_database()` is exactly `f
 
 - Reset credentials are random, hashed at rest, expire after 15 minutes, and are invalidated after use.
 - The forgot-password API always returns the same generic response and never returns a usable reset token.
-- FashionOS sends reset links through its configured transactional provider. `EMAIL_PROVIDER=capture` records messages only for development/tests; production requires the FashionOS-managed `resend` provider, sender identity, and API key.
-- Reset requests are throttled by HMAC-hashed email identity and source IP. Provider credentials are platform configuration, never business settings.
+- FashionOS sends reset links through one platform-managed SMTP configuration. Super Admin configures it at **Super Admin → Platform Settings → Email Configuration**; individual businesses never configure email credentials in V1.1.x.
+- Gmail, Outlook/Microsoft, Yahoo, and custom SMTP are supported. Mailbox providers may require an app password or SMTP-specific authentication; OAuth is not part of this MVP.
+- SMTP passwords/app passwords are encrypted server-side with `PLATFORM_EMAIL_ENCRYPTION_KEY`, never returned by the API, and never sent to the browser after save. Development/tests use a capture provider only.
+- Reset requests are throttled by HMAC-hashed email identity and source IP. If platform email is disabled or incomplete, the forgot-password endpoint remains generic and does not issue a reset credential.
 
 ## Orders and Production
 - Order numbers are generated per business from `order_counters`, producing references like `ORD-000001`; clients never submit `order_number`.
@@ -184,7 +186,7 @@ npm run format
 
 FashionOS is prepared for a provider-neutral deployment: a static React container over HTTPS, a persistent FastAPI container over HTTPS, and managed PostgreSQL over TLS. Copy values from `backend/.env.production.example` and `frontend/.env.production.example` into the hosting platform's environment/secret manager; do not create production `.env` files in the repository.
 
-Required backend values are `APP_NAME`, `APP_ENV=production`, `DEBUG=false`, `API_PREFIX`, `FRONTEND_URL`, `DATABASE_URL`, `JWT_SECRET_KEY`, `JWT_ALGORITHM`, token lifetimes, `COOKIE_SECURE=true`, and `COOKIE_SAMESITE`. The frontend requires public configuration `VITE_API_URL`; it must be the HTTPS API base including `/api/v1`. A production process refuses local or non-TLS PostgreSQL, an HTTP frontend, an insecure cookie, debug mode, or a JWT key shorter than 32 characters. Provider `postgresql://` URLs and `sslmode=require` are normalized for async SQLAlchemy/asyncpg.
+Required backend values are `APP_NAME`, `APP_ENV=production`, `DEBUG=false`, `API_PREFIX`, `FRONTEND_URL`, `DATABASE_URL`, `JWT_SECRET_KEY`, `PLATFORM_EMAIL_ENCRYPTION_KEY`, token lifetimes, `COOKIE_SECURE=true`, and `COOKIE_SAMESITE`. Store `PLATFORM_EMAIL_ENCRYPTION_KEY` in the server-side secret manager with at least 32 characters; it encrypts SMTP credentials in the database and must never be exposed to frontend code. The frontend requires public configuration `VITE_API_URL`; it must be the HTTPS API base including `/api/v1`. A production process refuses local or non-TLS PostgreSQL, an HTTP frontend, an insecure cookie, debug mode, a short JWT key, or a missing/short platform-email encryption key. Provider `postgresql://` URLs and `sslmode=require` are normalized for async SQLAlchemy/asyncpg.
 
 Build and run the backend image without development reload:
 
@@ -213,7 +215,7 @@ python -m alembic upgrade head
 python -m alembic current
 ```
 
-The final command must report `20260820_0013 (head)`. On a first empty database, running base-to-head creates the schema and system measurement templates. Confirm `/api/v1/health` returns `{"status":"ok","database":"reachable"}` after the API starts. Do not use `stamp head`, run downgrades automatically, or run the PostgreSQL concurrency suite against production.
+The final command must report `20260822_0014 (head)`. On a first empty database, running base-to-head creates the schema and system measurement templates. Confirm `/api/v1/health` returns `{"status":"ok","database":"reachable"}` after the API starts. Do not use `stamp head`, run downgrades automatically, or run the PostgreSQL concurrency suite against production.
 
 ### Cookies, CORS, HTTPS, and errors
 

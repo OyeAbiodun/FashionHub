@@ -6,20 +6,27 @@ import {
   DollarSign,
   Edit,
   Loader2,
+  Mail,
   Power,
   Search,
+  Send,
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   fetchAdminBusinesses,
   fetchPlatformActivity,
+  fetchPlatformEmailConfiguration,
   fetchPlatformMetrics,
+  sendPlatformEmailTest,
   toggleBusinessActive,
   updateBusinessEntitlements,
+  updatePlatformEmailConfiguration,
   type BusinessTenantDetail,
+  type PlatformEmailProvider,
+  type SmtpSecurityMode,
 } from "../api/admin";
 import { getApiErrorMessage } from "../api/client";
 import {
@@ -49,6 +56,27 @@ const ALL_MODULES = [
   { key: "tasks", label: "Tasks & Work Assignments" },
 ];
 
+const EMAIL_PRESETS: Record<
+  Exclude<PlatformEmailProvider, "CUSTOM_SMTP">,
+  { host: string; port: number; security: SmtpSecurityMode }
+> = {
+  GMAIL: { host: "smtp.gmail.com", port: 587, security: "STARTTLS" },
+  OUTLOOK: { host: "smtp.office365.com", port: 587, security: "STARTTLS" },
+  YAHOO: { host: "smtp.mail.yahoo.com", port: 465, security: "TLS" },
+};
+
+const defaultEmailForm = {
+  provider: "GMAIL" as PlatformEmailProvider,
+  enabled: false,
+  smtp_host: "smtp.gmail.com",
+  smtp_port: 587,
+  smtp_username: "",
+  smtp_password: "",
+  security_mode: "STARTTLS" as SmtpSecurityMode,
+  from_email: "",
+  from_name: "FashionOS",
+};
+
 export function SuperAdminPage() {
   const queryClient = useQueryClient();
 
@@ -59,6 +87,10 @@ export function SuperAdminPage() {
 
   const [dialogError, setDialogError] = useState("");
   const [dialogSuccess, setDialogSuccess] = useState(false);
+  const [emailForm, setEmailForm] = useState(defaultEmailForm);
+  const [testRecipient, setTestRecipient] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [emailSuccess, setEmailSuccess] = useState("");
 
   const metricsQuery = useQuery({
     queryKey: ["admin", "metrics"],
@@ -74,6 +106,27 @@ export function SuperAdminPage() {
     queryKey: ["admin", "activity"],
     queryFn: fetchPlatformActivity,
   });
+
+  const emailConfigurationQuery = useQuery({
+    queryKey: ["platform", "email"],
+    queryFn: fetchPlatformEmailConfiguration,
+  });
+
+  useEffect(() => {
+    const configuration = emailConfigurationQuery.data;
+    if (!configuration) return;
+    setEmailForm({
+      provider: configuration.provider,
+      enabled: configuration.enabled,
+      smtp_host: configuration.smtp_host,
+      smtp_port: configuration.smtp_port,
+      smtp_username: configuration.smtp_username ?? "",
+      smtp_password: "",
+      security_mode: configuration.security_mode,
+      from_email: configuration.from_email ?? "",
+      from_name: configuration.from_name,
+    });
+  }, [emailConfigurationQuery.data]);
 
   const updateEntitlementsMutation = useMutation({
     mutationFn: (data: { id: string; features: string[]; maxStaff: number }) =>
@@ -101,6 +154,32 @@ export function SuperAdminPage() {
     },
   });
 
+  const saveEmailMutation = useMutation({
+    mutationFn: () =>
+      updatePlatformEmailConfiguration({
+        ...emailForm,
+        smtp_username: emailForm.smtp_username || null,
+        smtp_password: emailForm.smtp_password || null,
+      }),
+    onSuccess: () => {
+      setEmailError("");
+      setEmailSuccess("Platform email configuration saved.");
+      setEmailForm((current) => ({ ...current, smtp_password: "" }));
+      void queryClient.invalidateQueries({ queryKey: ["platform", "email"] });
+    },
+    onError: (error) => setEmailError(getApiErrorMessage(error)),
+  });
+
+  const testEmailMutation = useMutation({
+    mutationFn: () => sendPlatformEmailTest(testRecipient),
+    onSuccess: (response) => {
+      setEmailError("");
+      setEmailSuccess(response.message);
+      void queryClient.invalidateQueries({ queryKey: ["platform", "email"] });
+    },
+    onError: (error) => setEmailError(getApiErrorMessage(error)),
+  });
+
   function openEditEntitlements(b: BusinessTenantDetail) {
     setEditingBusiness(b);
     setSelectedFeatures(b.enabled_features ?? []);
@@ -117,6 +196,31 @@ export function SuperAdminPage() {
       features: selectedFeatures,
       maxStaff,
     });
+  }
+
+  function selectEmailProvider(provider: PlatformEmailProvider) {
+    setEmailForm((current) => {
+      const preset = provider === "CUSTOM_SMTP" ? null : EMAIL_PRESETS[provider];
+      return {
+        ...current,
+        provider,
+        ...(preset
+          ? { smtp_host: preset.host, smtp_port: preset.port, security_mode: preset.security }
+          : {}),
+      };
+    });
+  }
+
+  function saveEmailConfiguration() {
+    setEmailError("");
+    setEmailSuccess("");
+    saveEmailMutation.mutate();
+  }
+
+  function sendEmailTest() {
+    setEmailError("");
+    setEmailSuccess("");
+    testEmailMutation.mutate();
   }
 
   const metrics = metricsQuery.data;
@@ -158,6 +262,147 @@ export function SuperAdminPage() {
           icon={DollarSign}
         />
       </div>
+
+      <Card className="mt-8 p-5 sm:p-7">
+        <SectionHeader
+          title="Platform Settings — Email Configuration"
+          description="Configure the single FashionOS transactional email service used by every tenant. Gmail, Outlook, and Yahoo commonly require an app password or SMTP-specific credentials."
+        />
+        <div className="mt-5 flex items-center gap-2 text-sm">
+          <Mail className="h-4 w-4 text-primary" aria-hidden="true" />
+          {emailConfigurationQuery.data?.configured ? (
+            <span className="font-medium text-emerald-700">✓ Email configured</span>
+          ) : (
+            <span className="font-medium text-amber-700">⚠ Email not configured</span>
+          )}
+          {emailConfigurationQuery.data?.last_test_status ? (
+            <span className="text-muted">
+              Last test: {emailConfigurationQuery.data.last_test_status.toLowerCase()}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <label>
+            <span className={labelStyles}>Provider</span>
+            <select
+              className={inputStyles}
+              value={emailForm.provider}
+              onChange={(event) => selectEmailProvider(event.target.value as PlatformEmailProvider)}
+            >
+              <option value="GMAIL">Gmail</option>
+              <option value="OUTLOOK">Outlook / Microsoft</option>
+              <option value="YAHOO">Yahoo</option>
+              <option value="CUSTOM_SMTP">Custom SMTP</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-3 pt-7 text-sm font-medium text-ink">
+            <input
+              type="checkbox"
+              checked={emailForm.enabled}
+              onChange={(event) => setEmailForm((current) => ({ ...current, enabled: event.target.checked }))}
+            />
+            Enable platform email delivery
+          </label>
+          <label>
+            <span className={labelStyles}>SMTP Host</span>
+            <input
+              className={inputStyles}
+              value={emailForm.smtp_host}
+              onChange={(event) => setEmailForm((current) => ({ ...current, smtp_host: event.target.value }))}
+            />
+          </label>
+          <label>
+            <span className={labelStyles}>SMTP Port</span>
+            <input
+              className={inputStyles}
+              type="number"
+              min="1"
+              max="65535"
+              value={emailForm.smtp_port}
+              onChange={(event) => setEmailForm((current) => ({ ...current, smtp_port: Number(event.target.value) }))}
+            />
+          </label>
+          <label>
+            <span className={labelStyles}>Username / Email</span>
+            <input
+              className={inputStyles}
+              type="email"
+              value={emailForm.smtp_username}
+              onChange={(event) => setEmailForm((current) => ({ ...current, smtp_username: event.target.value }))}
+            />
+          </label>
+          <label>
+            <span className={labelStyles}>Password / App Password</span>
+            <input
+              className={inputStyles}
+              type="password"
+              autoComplete="new-password"
+              placeholder={emailConfigurationQuery.data?.smtp_password_configured ? "Configured — leave blank to keep" : "Enter app password"}
+              value={emailForm.smtp_password}
+              onChange={(event) => setEmailForm((current) => ({ ...current, smtp_password: event.target.value }))}
+            />
+          </label>
+          <label>
+            <span className={labelStyles}>Security</span>
+            <select
+              className={inputStyles}
+              value={emailForm.security_mode}
+              onChange={(event) => setEmailForm((current) => ({ ...current, security_mode: event.target.value as SmtpSecurityMode }))}
+            >
+              <option value="STARTTLS">STARTTLS</option>
+              <option value="TLS">TLS</option>
+              <option value="NONE">None</option>
+            </select>
+          </label>
+          <label>
+            <span className={labelStyles}>From Email</span>
+            <input
+              className={inputStyles}
+              type="email"
+              value={emailForm.from_email}
+              onChange={(event) => setEmailForm((current) => ({ ...current, from_email: event.target.value }))}
+            />
+          </label>
+          <label>
+            <span className={labelStyles}>From Name</span>
+            <input
+              className={inputStyles}
+              value={emailForm.from_name}
+              onChange={(event) => setEmailForm((current) => ({ ...current, from_name: event.target.value }))}
+            />
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          SMTP credentials are encrypted server-side and are never displayed after saving.
+        </p>
+        {emailError ? <InlineError message={emailError} /> : null}
+        {emailSuccess ? <SuccessNotice>{emailSuccess}</SuccessNotice> : null}
+        <div className="mt-5 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-end">
+          <label className="flex-1">
+            <span className={labelStyles}>Test Recipient Email</span>
+            <input
+              className={inputStyles}
+              type="email"
+              placeholder="admin@example.com"
+              value={testRecipient}
+              onChange={(event) => setTestRecipient(event.target.value)}
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!testRecipient || testEmailMutation.isPending}
+            onClick={sendEmailTest}
+          >
+            <Send className="h-4 w-4" /> Send Test Email
+          </Button>
+          <Button type="button" disabled={saveEmailMutation.isPending} onClick={saveEmailConfiguration}>
+            {saveEmailMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+            Save Configuration
+          </Button>
+        </div>
+      </Card>
 
       {/* Main Tenant Directory */}
       <div className="mt-8 space-y-6">

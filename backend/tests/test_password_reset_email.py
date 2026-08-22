@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.models.business import Business
 from app.models.password_reset import PasswordResetToken
+from app.models.platform_email import PlatformEmailConfiguration
 from app.services import auth_service
 from app.services.email_service import (
     EmailDeliveryError,
@@ -19,14 +20,8 @@ def token_from_message(message: TransactionalEmail) -> str:
     return parse_qs(urlparse(url).query)["token"][0]
 
 
-async def test_reset_email_dispatches_branded_url_and_only_stores_token_hash(client):
+async def test_reset_email_uses_platform_branding_and_only_stores_token_hash(client):
     await client.post("/api/v1/auth/register", json=register_payload("brandedreset@example.com"))
-    async with client._transport.app.state.test_session_factory() as session:
-        business = (await session.execute(select(Business))).scalar_one()
-        business.logo_url = "https://cdn.example.com/ada-logo.png"
-        business.invoice_notes = "Thank you for choosing Ada Bespoke."
-        business.invoice_footer = "Made with care in Lagos."
-        await session.commit()
 
     response = await client.post(
         "/api/v1/auth/forgot-password", json={"email": "brandedreset@example.com"}
@@ -37,15 +32,12 @@ async def test_reset_email_dispatches_branded_url_and_only_stores_token_hash(cli
     message = capture_email_provider.messages[0]
     raw_token = token_from_message(message)
     assert message.to == "brandedreset@example.com"
-    assert message.subject == "Reset your Ada Bespoke password"
+    assert message.subject == "FashionOS Password Reset"
     assert "http://127.0.0.1:5173/reset-password?token=" in message.text
     assert raw_token in message.text and raw_token in message.html
-    assert "Ada Bespoke" in message.html
-    assert "ada-logo.png" in message.html
-    assert "+2348022222222" in message.html
-    assert "hello@adabespoke.example.com" in message.html
-    assert "Thank you for choosing Ada Bespoke." in message.html
-    assert "Made with care in Lagos." in message.html
+    assert "FashionOS Password Reset" in message.html
+    assert "Hello Ada" in message.html
+    assert "Ada Bespoke" not in message.html
 
     async with client._transport.app.state.test_session_factory() as session:
         reset_token = (await session.execute(select(PasswordResetToken))).scalar_one()
@@ -105,16 +97,36 @@ async def test_email_provider_failure_stays_generic_and_invalidates_undelivered_
         async def send(self, message: TransactionalEmail) -> None:
             raise EmailDeliveryError("provider unavailable")
 
+    async def get_failing_provider(_session, _settings):
+        return FailingProvider()
+
     monkeypatch.setattr(
         auth_service,
-        "get_transactional_email_service",
-        lambda _settings: FailingProvider(),
+        "get_configured_email_provider",
+        get_failing_provider,
     )
     response = await client.post(
         "/api/v1/auth/forgot-password", json={"email": "providerfail@example.com"}
     )
     assert response.status_code == 200
     assert "provider" not in response.text.lower()
+    assert capture_email_provider.messages == []
+    async with client._transport.app.state.test_session_factory() as session:
+        assert (await session.execute(select(PasswordResetToken))).scalars().all() == []
+
+
+async def test_password_reset_without_platform_email_stays_generic_and_does_not_issue_token(client):
+    await client.post("/api/v1/auth/register", json=register_payload("noconfig@example.com"))
+    async with client._transport.app.state.test_session_factory() as session:
+        configuration = (await session.execute(select(PlatformEmailConfiguration))).scalar_one()
+        configuration.enabled = False
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "noconfig@example.com"}
+    )
+    assert response.status_code == 200
+    assert "token" not in response.text
     assert capture_email_provider.messages == []
     async with client._transport.app.state.test_session_factory() as session:
         assert (await session.execute(select(PasswordResetToken))).scalars().all() == []

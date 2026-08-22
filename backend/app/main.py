@@ -15,6 +15,7 @@ from app.api.routes import (
     health,
     measurements,
     orders,
+    platform,
     roles,
     tasks,
     team,
@@ -70,6 +71,7 @@ async def add_security_headers(request: Request, call_next: RequestResponseEndpo
 app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
+app.include_router(platform.router, prefix=settings.api_prefix)
 app.include_router(team.router, prefix=settings.api_prefix)
 app.include_router(roles.router, prefix=settings.api_prefix)
 app.include_router(tasks.router, prefix=settings.api_prefix)

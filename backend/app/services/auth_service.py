@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -21,11 +22,12 @@ from app.schemas.user import ChangePasswordRequest, UserUpdate
 from app.services.email_service import (
     EmailDeliveryError,
     TransactionalEmail,
-    get_transactional_email_service,
+    get_configured_email_provider,
 )
 from app.services.measurement_service import seed_default_templates_for_business
 
 AUTH_ERROR = "Invalid email or password"
+logger = logging.getLogger(__name__)
 
 
 async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
@@ -114,6 +116,14 @@ async def request_password_reset(
     user = await get_user_by_email(session, email)
     if user is None or not user.is_active or not user.business.is_active:
         return generic_msg
+    try:
+        email_provider = await get_configured_email_provider(session, settings)
+    except EmailDeliveryError:
+        logger.error("Password reset email delivery is unavailable due to platform configuration.")
+        return generic_msg
+    if email_provider is None:
+        logger.error("Password reset email delivery is unavailable because it is not configured.")
+        return generic_msg
     raw_token = token_urlsafe(32)
     await session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
     session.add(
@@ -126,9 +136,10 @@ async def request_password_reset(
     await session.commit()
     message = build_password_reset_email(user, raw_token, settings)
     try:
-        await get_transactional_email_service(settings).send(message)
+        await email_provider.send(message)
     except EmailDeliveryError:
         # Do not retain a credential that was never delivered and do not expose provider details.
+        logger.error("Password reset email delivery failed.")
         await session.execute(
             delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
         )
@@ -221,44 +232,30 @@ def _hash_reset_request_value(value: str, settings) -> str:
 def build_password_reset_email(user: User, raw_token: str, settings) -> TransactionalEmail:
     from html import escape
 
-    business = user.business
     reset_url = f"{settings.frontend_origin}/reset-password?{urlencode({'token': raw_token})}"
-    business_name = escape(business.name)
-    contact_details = [
-        business.phone,
-        business.email,
-        business.address,
-        business.invoice_notes,
-        business.invoice_footer,
-    ]
-    contact_text = " · ".join(value for value in contact_details if value)
-    escaped_contact = escape(contact_text)
-    logo = (
-        f'<img src="{escape(business.logo_url, quote=True)}" alt="{business_name}" '
-        'style="max-height:48px;max-width:180px;margin-bottom:12px;" />'
-        if business.logo_url
-        else ""
-    )
-    subject = f"Reset your {business.name} password"
+    first_name = escape(user.first_name) if user.first_name else "there"
+    subject = "FashionOS Password Reset"
     text = (
-        f"{business.name}\n\n"
-        "A password reset was requested for your FashionOS account. "
+        "FashionOS Password Reset\n\n"
+        f"Hello {user.first_name or 'there'},\n\n"
+        "We received a request to reset your FashionOS password. "
         f"Use this link within 15 minutes:\n{reset_url}\n\n"
         "If you did not request this, you can safely ignore this email.\n\n"
-        f"{contact_text}"
+        "FashionOS"
     )
     html = (
         '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">'
-        f'<div style="max-width:560px;margin:0 auto;padding:24px;">{logo}'
-        f"<h1 style=\"font-size:22px;\">{business_name}</h1>"
-        "<p>A password reset was requested for your FashionOS account.</p>"
+        '<div style="max-width:560px;margin:0 auto;padding:24px;">'
+        '<h1 style="font-size:22px;">FashionOS Password Reset</h1>'
+        f"<p>Hello {first_name},</p>"
+        "<p>We received a request to reset your FashionOS password.</p>"
         f'<p><a href="{escape(reset_url, quote=True)}" '
         'style="display:inline-block;padding:12px 18px;background:#047857;color:#fff;'
         'text-decoration:none;border-radius:6px;">Reset password</a></p>'
         "<p>This link expires in 15 minutes and can be used once.</p>"
         "<p>If you did not request this, you can safely ignore this email.</p>"
-        f'<hr style="border:0;border-top:1px solid #e5e7eb;"><p style="font-size:12px;">'
-        f"{escaped_contact}</p></div></body></html>"
+        '<hr style="border:0;border-top:1px solid #e5e7eb;"><p style="font-size:12px;">'
+        "FashionOS</p></div></body></html>"
     )
     return TransactionalEmail(to=user.email, subject=subject, text=text, html=html)
 

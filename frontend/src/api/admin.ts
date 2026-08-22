@@ -44,6 +44,37 @@ export interface PlatformActivityItem {
   timestamp: string;
 }
 
+export type PlatformEmailProvider = "GMAIL" | "OUTLOOK" | "YAHOO" | "CUSTOM_SMTP";
+export type SmtpSecurityMode = "STARTTLS" | "TLS" | "NONE";
+
+export interface PlatformEmailConfiguration {
+  id: string | null;
+  provider: PlatformEmailProvider;
+  enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string | null;
+  smtp_password_configured: boolean;
+  security_mode: SmtpSecurityMode;
+  from_email: string | null;
+  from_name: string;
+  configured: boolean;
+  last_tested_at: string | null;
+  last_test_status: string | null;
+}
+
+export interface UpdatePlatformEmailPayload {
+  provider: PlatformEmailProvider;
+  enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string | null;
+  smtp_password?: string | null;
+  security_mode: SmtpSecurityMode;
+  from_email: string;
+  from_name: string;
+}
+
 export async function fetchPlatformMetrics(): Promise<PlatformMetrics> {
   const response = await apiClient.get<PlatformMetrics>("/admin/metrics");
   return response.data;
@@ -83,5 +114,22 @@ export async function toggleBusinessActive(
 
 export async function fetchPlatformActivity(): Promise<PlatformActivityItem[]> {
   const response = await apiClient.get<PlatformActivityItem[]>("/admin/activity");
+  return response.data;
+}
+
+export async function fetchPlatformEmailConfiguration(): Promise<PlatformEmailConfiguration> {
+  const response = await apiClient.get<PlatformEmailConfiguration>("/platform/email");
+  return response.data;
+}
+
+export async function updatePlatformEmailConfiguration(
+  payload: UpdatePlatformEmailPayload
+): Promise<PlatformEmailConfiguration> {
+  const response = await apiClient.put<PlatformEmailConfiguration>("/platform/email", payload);
+  return response.data;
+}
+
+export async function sendPlatformEmailTest(recipient: string): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>("/platform/email/test", { recipient });
   return response.data;
 }
