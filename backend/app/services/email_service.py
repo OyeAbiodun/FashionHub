@@ -215,7 +215,7 @@ async def get_configured_email_provider(
     public_configuration = serialize_platform_email_configuration(configuration)
     if configuration is None or not public_configuration.configured:
         return None
-    if settings.app_env.lower() != "production":
+    if settings.app_env.lower() == "test":
         return capture_email_provider
     try:
         password = decrypt_platform_email_secret(

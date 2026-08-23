@@ -1,9 +1,16 @@
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
+from app.core.config import Settings, get_settings
 from app.models.platform_email import PlatformEmailConfiguration
 from app.models.user import User, UserRole
-from app.services.email_service import PROVIDER_PRESETS, capture_email_provider
+from app.services.email_service import (
+    PROVIDER_PRESETS,
+    SmtpEmailProvider,
+    TransactionalEmail,
+    capture_email_provider,
+    get_configured_email_provider,
+)
 
 
 async def make_super_admin(client) -> None:
@@ -44,6 +51,21 @@ def email_payload(**overrides: object) -> dict[str, object]:
     }
     payload.update(overrides)
     return payload
+
+
+def smtp_settings(app_env: str) -> Settings:
+    values: dict[str, object] = {
+        "APP_ENV": app_env,
+        "DEBUG": False,
+        "FRONTEND_URL": "https://app.fashionos.example",
+        "DATABASE_URL": (
+            "postgresql://fashionos:password@db.fashionos.example:5432/fashionos?sslmode=require"
+        ),
+        "JWT_SECRET_KEY": "a-production-secret-that-is-at-least-32-characters",
+        "COOKIE_SECURE": True,
+        "PLATFORM_EMAIL_ENCRYPTION_KEY": "test-platform-email-encryption-secret-key",
+    }
+    return Settings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 async def test_platform_email_is_super_admin_only(client):
@@ -168,3 +190,48 @@ async def test_custom_smtp_configuration_is_supported(client):
     assert response.status_code == 200
     assert response.json()["provider"] == "CUSTOM_SMTP"
     assert response.json()["smtp_host"] == "mail.example.test"
+
+
+async def test_test_environment_uses_the_capture_provider(client):
+    async with client._transport.app.state.test_session_factory() as session:
+        provider = await get_configured_email_provider(session, get_settings())
+
+    assert provider is capture_email_provider
+
+
+@pytest.mark.parametrize("app_env", ["development", "production"])
+async def test_development_and_production_use_decrypted_smtp_provider(client, app_env, monkeypatch):
+    delivered: list[tuple[str, str]] = []
+
+    def capture_smtp_send(self: SmtpEmailProvider, message: TransactionalEmail) -> None:
+        delivered.append((self._password, message.to))
+
+    monkeypatch.setattr(SmtpEmailProvider, "_send_sync", capture_smtp_send)
+    async with client._transport.app.state.test_session_factory() as session:
+        provider = await get_configured_email_provider(session, smtp_settings(app_env))
+
+    assert isinstance(provider, SmtpEmailProvider)
+    await provider.send(
+        TransactionalEmail(
+            to="delivery@example.com",
+            subject="Test",
+            text="Test message",
+            html="<p>Test message</p>",
+        )
+    )
+    assert delivered == [("test-only-capture-secret", "delivery@example.com")]
+    assert capture_email_provider.messages == []
+
+
+@pytest.mark.parametrize("state", ["disabled", "missing"])
+async def test_missing_or_disabled_platform_email_returns_no_provider(client, state):
+    async with client._transport.app.state.test_session_factory() as session:
+        if state == "disabled":
+            configuration = (await session.execute(select(PlatformEmailConfiguration))).scalar_one()
+            configuration.enabled = False
+        else:
+            await session.execute(delete(PlatformEmailConfiguration))
+        await session.commit()
+        provider = await get_configured_email_provider(session, smtp_settings("development"))
+
+    assert provider is None
