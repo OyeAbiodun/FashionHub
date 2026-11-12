@@ -31,9 +31,10 @@ UNSAFE_HTTP_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Auto-initialize database tables and seed measurement templates on local dev startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Keep automatic schema creation for local/test databases; production uses Alembic.
+    if settings.app_env.lower() != "production":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     async for session in get_db_session():
         await ensure_system_templates(session)
         break
