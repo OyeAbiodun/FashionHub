@@ -8,6 +8,7 @@ Create Date: 2026-08-22
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -18,8 +19,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    provider = sa.Enum("GMAIL", "OUTLOOK", "YAHOO", "CUSTOM_SMTP", name="platform_email_provider")
-    security_mode = sa.Enum("STARTTLS", "TLS", "NONE", name="smtp_security_mode")
+    provider = postgresql.ENUM(
+        "GMAIL",
+        "OUTLOOK",
+        "YAHOO",
+        "CUSTOM_SMTP",
+        name="platform_email_provider",
+        create_type=False,
+    )
+    security_mode = postgresql.ENUM(
+        "STARTTLS", "TLS", "NONE", name="smtp_security_mode", create_type=False
+    )
     provider.create(op.get_bind(), checkfirst=True)
     security_mode.create(op.get_bind(), checkfirst=True)
     op.create_table(
@@ -56,7 +66,16 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("platform_email_configurations")
-    security_mode = sa.Enum("STARTTLS", "TLS", "NONE", name="smtp_security_mode")
-    provider = sa.Enum("GMAIL", "OUTLOOK", "YAHOO", "CUSTOM_SMTP", name="platform_email_provider")
+    security_mode = postgresql.ENUM(
+        "STARTTLS", "TLS", "NONE", name="smtp_security_mode", create_type=False
+    )
+    provider = postgresql.ENUM(
+        "GMAIL",
+        "OUTLOOK",
+        "YAHOO",
+        "CUSTOM_SMTP",
+        name="platform_email_provider",
+        create_type=False,
+    )
     security_mode.drop(op.get_bind(), checkfirst=True)
     provider.drop(op.get_bind(), checkfirst=True)
