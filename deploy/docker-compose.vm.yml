@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - private
+
+  api:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: FashionOS
+      APP_ENV: ${APP_ENV}
+      DEBUG: "false"
+      API_PREFIX: /api/v1
+      FRONTEND_URL: ${FRONTEND_URL}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "15"
+      REFRESH_TOKEN_EXPIRE_DAYS: "14"
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE}
+      PLATFORM_EMAIL_ENCRYPTION_KEY: ${PLATFORM_EMAIL_ENCRYPTION_KEY}
+      SMTP_TIMEOUT_SECONDS: "10"
+      PASSWORD_RESET_RATE_LIMIT_COUNT: "3"
+      PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES: "15"
+      PASSWORD_RESET_IP_RATE_LIMIT_COUNT: "10"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - edge
+      - private
+
+  web:
+    build:
+      context: ../frontend
+      args:
+        BUILD_ENV: ${APP_ENV}
+        VITE_API_URL: ${VITE_API_URL}
+    restart: unless-stopped
+    networks:
+      - edge
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.vm.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - edge
+
+networks:
+  edge:
+  private:
+    internal: true
+
+volumes:
+  postgres_data:
