@@ -26,6 +26,17 @@ test("production API configuration fails closed", () => {
   ).toBe("https://api.example.com/api/v1");
 });
 
+test("explicit development builds may use an HTTP API URL", () => {
+  const location = {
+    protocol: "http:",
+    hostname: "34.44.74.235",
+  } as Location;
+
+  expect(resolveApiUrl("http://34.44.74.235/api/v1", true, location)).toBe(
+    "http://34.44.74.235/api/v1",
+  );
+});
+
 afterEach(() => {
   apiClient.defaults.adapter = originalAdapter;
   vi.restoreAllMocks();

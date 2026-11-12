@@ -21,7 +21,7 @@ export function resolveApiUrl(
 
 const baseURL = resolveApiUrl(
   import.meta.env.VITE_API_URL,
-  import.meta.env.DEV,
+  import.meta.env.MODE === "development" || import.meta.env.MODE === "test",
   window.location,
 );
 const authSkipPaths = [
