@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from app.core.config import get_settings
 from app.models.base import Base
+from app.models.admin_audit import AdminAuditLog  # noqa: F401
 from app.models.business import Business  # noqa: F401
 from app.models.customer import Customer  # noqa: F401
 from app.models.measurement import (  # noqa: F401  # noqa: F401

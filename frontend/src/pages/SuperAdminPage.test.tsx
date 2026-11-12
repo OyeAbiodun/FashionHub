@@ -47,7 +47,7 @@ describe("SuperAdminPage", () => {
       total_users: 12,
       total_customers: 50,
       total_orders: 25,
-      total_revenue: "150000.00",
+      collected_by_currency: { NGN: "150000.00" },
     });
 
     vi.mocked(adminApi.fetchAdminBusinesses).mockResolvedValueOnce({
@@ -82,7 +82,7 @@ describe("SuperAdminPage", () => {
 
     expect(screen.getByText("Super Admin Control Center")).toBeInTheDocument();
     expect(await screen.findByText("Lagos Bespoke Studio")).toBeInTheDocument();
-    expect(screen.getByText("₦150000.00")).toBeInTheDocument();
+    expect(screen.getByText("NGN 150000.00")).toBeInTheDocument();
     expect(screen.getByText("Platform Settings — Email Configuration")).toBeInTheDocument();
   });
 
@@ -95,7 +95,7 @@ describe("SuperAdminPage", () => {
       total_users: 2,
       total_customers: 5,
       total_orders: 3,
-      total_revenue: "20000.00",
+      collected_by_currency: { NGN: "20000.00" },
     });
 
     vi.mocked(adminApi.fetchAdminBusinesses).mockResolvedValueOnce({
@@ -168,7 +168,7 @@ describe("SuperAdminPage", () => {
       total_users: 1,
       total_customers: 0,
       total_orders: 0,
-      total_revenue: "0.00",
+      collected_by_currency: {},
     });
     vi.mocked(adminApi.fetchAdminBusinesses).mockResolvedValueOnce({
       items: [], total: 0, page: 1, page_size: 20,

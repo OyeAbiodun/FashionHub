@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  ClipboardList,
   Building2,
   CheckCircle2,
   DollarSign,
@@ -17,6 +18,7 @@ import { useEffect, useState } from "react";
 
 import {
   fetchAdminBusinesses,
+  fetchAdminAudit,
   fetchPlatformActivity,
   fetchPlatformEmailConfiguration,
   fetchPlatformMetrics,
@@ -105,6 +107,11 @@ export function SuperAdminPage() {
   const activityQuery = useQuery({
     queryKey: ["admin", "activity"],
     queryFn: fetchPlatformActivity,
+  });
+
+  const auditQuery = useQuery({
+    queryKey: ["admin", "audit"],
+    queryFn: () => fetchAdminAudit({ limit: 30 }),
   });
 
   const emailConfigurationQuery = useQuery({
@@ -257,8 +264,8 @@ export function SuperAdminPage() {
         />
         <MetricCard
           label="Platform Revenue (GMV)"
-          value={metrics ? `₦${metrics.total_revenue}` : "..."}
-          subtext="Total payments across all tenants"
+          value={metrics ? (Object.keys(metrics.collected_by_currency).length ? Object.entries(metrics.collected_by_currency).map(([currency, amount]) => `${currency} ${amount}`).join(" · ") : "0.00") : "..."}
+          subtext="Successful payments, grouped by business currency"
           icon={DollarSign}
         />
       </div>
@@ -519,7 +526,7 @@ export function SuperAdminPage() {
         <Card className="p-5 sm:p-7">
           <SectionHeader
             title="System Activity Feed"
-            description="Live stream of recent tenant registrations and system milestones."
+            description="Recent business registrations and platform operational events."
           />
           <div className="mt-4 space-y-3">
             {activity.map((item) => (
@@ -533,12 +540,35 @@ export function SuperAdminPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-ink">{item.title}</p>
                   <p className="text-xs text-muted">{item.description}</p>
+                  {item.amount && item.currency ? <p className="text-xs font-medium text-ink">{item.currency} {item.amount}</p> : null}
                 </div>
                 <span className="text-xs text-slate-400">
                   {new Date(item.timestamp).toLocaleDateString()}
                 </span>
               </div>
             ))}
+          </div>
+        </Card>
+
+        <Card className="p-5 sm:p-7">
+          <SectionHeader
+            title="Platform Admin Audit Trail"
+            description="Business status and entitlement changes with the administrator, time, and affected tenant."
+          />
+          <div className="mt-4 space-y-3">
+            {(auditQuery.data ?? []).map((entry) => (
+              <div key={entry.id} className="flex items-start gap-3 rounded-lg border border-border p-3.5">
+                <div className="rounded-full bg-slate-100 p-2 text-slate-700"><ClipboardList className="h-4 w-4" aria-hidden="true" /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-ink">{entry.summary}</p>
+                  <p className="text-xs text-muted">{entry.actor_name} ({entry.actor_email}) · {entry.business_name ?? "Platform"} · {new Date(entry.timestamp).toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-muted">{entry.action}</p>
+                </div>
+              </div>
+            ))}
+            {auditQuery.isLoading ? <p className="text-sm text-muted">Loading audit history…</p> : null}
+            {!auditQuery.isLoading && (auditQuery.data ?? []).length === 0 ? <p className="text-sm text-muted">No platform admin changes recorded yet.</p> : null}
+            {auditQuery.isError ? <InlineError message="Could not load platform admin audit history." /> : null}
           </div>
         </Card>
       </div>

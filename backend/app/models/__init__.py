@@ -1,3 +1,4 @@
+from app.models.admin_audit import AdminAuditLog
 from app.models.business import Business
 from app.models.customer import Customer
 from app.models.finance import (
@@ -28,6 +29,7 @@ from app.models.task import Task, TaskPriority, TaskStatus
 from app.models.user import User, UserRole
 
 __all__ = [
+    "AdminAuditLog",
     "Business",
     "Customer",
     "Invoice",

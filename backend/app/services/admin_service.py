@@ -5,12 +5,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.admin_audit import AdminAuditLog
 from app.models.business import Business
 from app.models.customer import Customer
-from app.models.finance import Payment
+from app.models.finance import Payment, PaymentStatus
 from app.models.order import Order
 from app.models.user import User
 from app.schemas.admin import (
+    AdminAuditItem,
     BusinessTenantDetail,
     PlatformActivityItem,
     PlatformMetrics,
@@ -36,8 +38,15 @@ async def get_platform_metrics(session: AsyncSession) -> PlatformMetrics:
     total_o_result = await session.execute(select(func.count(Order.id)))
     total_orders = total_o_result.scalar_one_or_none() or 0
 
-    rev_result = await session.execute(select(func.coalesce(func.sum(Payment.amount), 0)))
-    total_revenue_decimal = Decimal(str(rev_result.scalar_one_or_none() or 0))
+    currency_result = await session.execute(
+        select(Business.currency, func.coalesce(func.sum(Payment.amount), 0))
+        .join(Payment, Payment.business_id == Business.id)
+        .where(Payment.status == PaymentStatus.SUCCESSFUL)
+        .group_by(Business.currency)
+    )
+    collected_by_currency = {
+        currency: f"{Decimal(str(amount)):.2f}" for currency, amount in currency_result.all()
+    }
 
     return PlatformMetrics(
         total_businesses=total_businesses,
@@ -45,7 +54,7 @@ async def get_platform_metrics(session: AsyncSession) -> PlatformMetrics:
         total_users=total_users,
         total_customers=total_customers,
         total_orders=total_orders,
-        total_revenue=f"{total_revenue_decimal:.2f}",
+        collected_by_currency=collected_by_currency,
     )
 
 
@@ -139,7 +148,11 @@ async def get_business_tenant_detail(
 
 
 async def update_business_entitlements(
-    session: AsyncSession, business_id: uuid.UUID, payload: UpdateBusinessEntitlements
+    session: AsyncSession,
+    business_id: uuid.UUID,
+    payload: UpdateBusinessEntitlements,
+    actor: User | None = None,
+    request=None,
 ) -> BusinessTenantDetail:
     result = await session.execute(select(Business).where(Business.id == business_id))
     business_obj = result.scalar_one_or_none()
@@ -148,15 +161,35 @@ async def update_business_entitlements(
             status_code=status.HTTP_404_NOT_FOUND, detail="Business tenant not found"
         )
 
+    old_values = {
+        "enabled_features": business_obj.enabled_features,
+        "max_staff_users": business_obj.max_staff_users,
+    }
     business_obj.enabled_features = payload.enabled_features
     business_obj.max_staff_users = payload.max_staff_users
+    if actor:
+        await record_admin_action(
+            session,
+            actor,
+            "BUSINESS_ENTITLEMENTS_UPDATED",
+            f"Updated feature access and staff limit for {business_obj.name}",
+            business_obj.id,
+            {
+                "before": old_values,
+                "after": {
+                    "enabled_features": payload.enabled_features,
+                    "max_staff_users": payload.max_staff_users,
+                },
+            },
+            request,
+        )
     await session.commit()
     await session.refresh(business_obj)
     return await get_business_tenant_detail(session, business_id, business_obj=business_obj)
 
 
 async def toggle_business_active(
-    session: AsyncSession, business_id: uuid.UUID
+    session: AsyncSession, business_id: uuid.UUID, actor: User | None = None, request=None
 ) -> BusinessTenantDetail:
     result = await session.execute(select(Business).where(Business.id == business_id))
     business_obj = result.scalar_one_or_none()
@@ -166,6 +199,16 @@ async def toggle_business_active(
         )
 
     business_obj.is_active = not business_obj.is_active
+    if actor:
+        await record_admin_action(
+            session,
+            actor,
+            "BUSINESS_ACTIVATED" if business_obj.is_active else "BUSINESS_SUSPENDED",
+            f"{'Activated' if business_obj.is_active else 'Suspended'} {business_obj.name}",
+            business_obj.id,
+            {"is_active": business_obj.is_active},
+            request,
+        )
     await session.commit()
     await session.refresh(business_obj)
     return await get_business_tenant_detail(session, business_id, business_obj=business_obj)
@@ -178,10 +221,10 @@ async def get_recent_platform_activity(
 
     # Recent business registrations
     recent_b = (
-        await session.execute(
-            select(Business).order_by(Business.created_at.desc()).limit(limit)
-        )
-    ).scalars().all()
+        (await session.execute(select(Business).order_by(Business.created_at.desc()).limit(limit)))
+        .scalars()
+        .all()
+    )
     for b in recent_b:
         items.append(
             PlatformActivityItem(
@@ -194,6 +237,110 @@ async def get_recent_platform_activity(
             )
         )
 
+    recent_orders = (
+        await session.execute(
+            select(Order, Business)
+            .join(Business, Business.id == Order.business_id)
+            .order_by(Order.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    for order, business in recent_orders:
+        items.append(
+            PlatformActivityItem(
+                id=f"o-{order.id}",
+                type="ORDER_CREATED",
+                title="Order Created",
+                description=f"Order {order.order_number} was created for {business.name}",
+                business_name=business.name,
+                timestamp=order.created_at,
+                currency=business.currency,
+            )
+        )
+
+    recent_payments = (
+        await session.execute(
+            select(Payment, Business)
+            .join(Business, Business.id == Payment.business_id)
+            .where(Payment.status == PaymentStatus.SUCCESSFUL)
+            .order_by(Payment.paid_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    for payment, business in recent_payments:
+        items.append(
+            PlatformActivityItem(
+                id=f"p-{payment.id}",
+                type="PAYMENT_RECEIVED",
+                title="Payment Received",
+                description=f"{business.name} recorded a successful payment",
+                business_name=business.name,
+                timestamp=payment.paid_at,
+                currency=business.currency,
+                amount=f"{payment.amount:.2f}",
+            )
+        )
+
     # Sort all by timestamp descending
     items.sort(key=lambda x: x.timestamp, reverse=True)
     return items[:limit]
+
+
+async def record_admin_action(
+    session: AsyncSession,
+    actor: User,
+    action: str,
+    summary: str,
+    business_id: uuid.UUID | None = None,
+    details: dict | None = None,
+    request=None,
+) -> None:
+    session.add(
+        AdminAuditLog(
+            actor_id=actor.id,
+            business_id=business_id,
+            action=action,
+            summary=summary,
+            details=details or {},
+            source_ip=request.client.host if request and request.client else None,
+            user_agent=(request.headers.get("user-agent", "")[:500] or None) if request else None,
+        )
+    )
+
+
+async def list_admin_audit(
+    session: AsyncSession,
+    limit: int = 50,
+    search: str | None = None,
+) -> list[AdminAuditItem]:
+    stmt = (
+        select(AdminAuditLog, User, Business)
+        .join(User, User.id == AdminAuditLog.actor_id)
+        .outerjoin(Business, Business.id == AdminAuditLog.business_id)
+    )
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        stmt = stmt.where(
+            AdminAuditLog.action.ilike(term)
+            | AdminAuditLog.summary.ilike(term)
+            | User.email.ilike(term)
+            | Business.name.ilike(term)
+        )
+    rows = (
+        await session.execute(stmt.order_by(AdminAuditLog.created_at.desc()).limit(limit))
+    ).all()
+    return [
+        AdminAuditItem(
+            id=entry.id,
+            actor_name=f"{user.first_name} {user.last_name}",
+            actor_email=user.email,
+            action=entry.action,
+            summary=entry.summary,
+            business_id=entry.business_id,
+            business_name=business.name if business else None,
+            details=entry.details,
+            source_ip=entry.source_ip,
+            timestamp=entry.created_at,
+        )
+        for entry, user, business in rows
+    ]

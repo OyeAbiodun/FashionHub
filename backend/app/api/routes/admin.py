@@ -1,13 +1,14 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_super_admin
 from app.core.database import get_db_session
 from app.models.user import User
 from app.schemas.admin import (
+    AdminAuditItem,
     BusinessTenantDetail,
     PlatformActivityItem,
     PlatformMetrics,
@@ -17,6 +18,7 @@ from app.services.admin_service import (
     get_business_tenant_detail,
     get_platform_metrics,
     get_recent_platform_activity,
+    list_admin_audit,
     list_all_businesses,
     toggle_business_active,
     update_business_entitlements,
@@ -66,19 +68,21 @@ async def get_business(
 async def update_entitlements(
     business_id: uuid.UUID,
     payload: UpdateBusinessEntitlements,
-    _: Annotated[User, Depends(get_current_super_admin)],
+    actor: Annotated[User, Depends(get_current_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    request: Request,
 ) -> BusinessTenantDetail:
-    return await update_business_entitlements(session, business_id, payload)
+    return await update_business_entitlements(session, business_id, payload, actor, request)
 
 
 @router.post("/businesses/{business_id}/toggle-active", response_model=BusinessTenantDetail)
 async def toggle_active(
     business_id: uuid.UUID,
-    _: Annotated[User, Depends(get_current_super_admin)],
+    actor: Annotated[User, Depends(get_current_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    request: Request,
 ) -> BusinessTenantDetail:
-    return await toggle_business_active(session, business_id)
+    return await toggle_business_active(session, business_id, actor, request)
 
 
 @router.get("/activity", response_model=list[PlatformActivityItem])
@@ -88,3 +92,13 @@ async def get_activity(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[PlatformActivityItem]:
     return await get_recent_platform_activity(session, limit=limit)
+
+
+@router.get("/audit", response_model=list[AdminAuditItem])
+async def get_audit(
+    _: Annotated[User, Depends(get_current_super_admin)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+) -> list[AdminAuditItem]:
+    return await list_admin_audit(session, limit=limit, search=search)

@@ -10,7 +10,7 @@ class PlatformMetrics(BaseModel):
     total_users: int
     total_customers: int
     total_orders: int
-    total_revenue: str
+    collected_by_currency: dict[str, str]
 
 
 class BusinessTenantDetail(BaseModel):
@@ -56,4 +56,19 @@ class PlatformActivityItem(BaseModel):
     title: str
     description: str
     business_name: str
+    timestamp: datetime
+    currency: str | None = None
+    amount: str | None = None
+
+
+class AdminAuditItem(BaseModel):
+    id: UUID
+    actor_name: str
+    actor_email: str
+    action: str
+    summary: str
+    business_id: UUID | None
+    business_name: str | None
+    details: dict[str, object]
+    source_ip: str | None
     timestamp: datetime

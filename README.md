@@ -215,7 +215,7 @@ python -m alembic upgrade head
 python -m alembic current
 ```
 
-The final command must report `20260822_0014 (head)`. On a first empty database, running base-to-head creates the schema and system measurement templates. Confirm `/api/v1/health` returns `{"status":"ok","database":"reachable"}` after the API starts. Do not use `stamp head`, run downgrades automatically, or run the PostgreSQL concurrency suite against production.
+The final command must report `20261112_0016 (head)`. This revision adds the platform admin audit log and the `BUSINESS_ADMIN`/`SUPER_ADMIN` role labels required by the current application. On a first empty database, running base-to-head creates the schema and system measurement templates. Confirm `/api/v1/health` returns `{"status":"ok","database":"reachable"}` after the API starts. Do not use `stamp head`, run downgrades automatically, or run the PostgreSQL concurrency suite against production.
 
 ### Cookies, CORS, HTTPS, and errors
 

@@ -6,7 +6,7 @@ export interface PlatformMetrics {
   total_users: number;
   total_customers: number;
   total_orders: number;
-  total_revenue: string;
+  collected_by_currency: Record<string, string>;
 }
 
 export interface BusinessTenantDetail {
@@ -42,6 +42,23 @@ export interface PlatformActivityItem {
   description: string;
   business_name: string;
   timestamp: string;
+  currency?: string | null;
+  amount?: string | null;
+}
+
+export interface AdminAuditItem {
+  id: string;
+  actor_name: string;
+  actor_email: string;
+  action: string;
+  summary: string;
+  business_id: string | null;
+  business_name: string | null;
+  details: Record<string, unknown>;
+  source_ip: string | null;
+  timestamp: string;
+  currency?: string | null;
+  amount?: string | null;
 }
 
 export type PlatformEmailProvider = "GMAIL" | "OUTLOOK" | "YAHOO" | "CUSTOM_SMTP";
@@ -114,6 +131,11 @@ export async function toggleBusinessActive(
 
 export async function fetchPlatformActivity(): Promise<PlatformActivityItem[]> {
   const response = await apiClient.get<PlatformActivityItem[]>("/admin/activity");
+  return response.data;
+}
+
+export async function fetchAdminAudit(params?: { limit?: number; search?: string }): Promise<AdminAuditItem[]> {
+  const response = await apiClient.get<AdminAuditItem[]>("/admin/audit", { params });
   return response.data;
 }
 
