@@ -5,13 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CalendarPage } from "./CalendarPage";
 
+const eventDate = vi.hoisted(() => new Date().toISOString().slice(0, 10));
+
 vi.mock("../api/calendar", () => ({
   fetchCalendarEvents: vi.fn().mockResolvedValue([
     {
       id: "order:ord-1",
       event_type: "ORDER_DUE",
       title: "#ORD-0001 - Ada Okafor (Senate Suit)",
-      event_date: "2026-08-20",
+      event_date: eventDate,
       status: "IN_PRODUCTION",
       customer_name: "Ada Okafor",
       order_id: "ord-1",
@@ -20,7 +22,7 @@ vi.mock("../api/calendar", () => ({
       id: "order:ord-2",
       event_type: "ORDER_FITTING",
       title: "#ORD-0002 - Emeka Fitting",
-      event_date: "2026-08-25",
+      event_date: eventDate,
       status: "FITTING",
       customer_name: "Emeka Tailor",
       order_id: "ord-2",

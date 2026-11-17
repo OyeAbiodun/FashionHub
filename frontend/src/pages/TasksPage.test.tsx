@@ -71,9 +71,9 @@ describe("TasksPage", () => {
       </QueryClientProvider>
     );
 
-    expect(screen.getByText("Task Management")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument();
     expect(await screen.findByText("Cut Agbada Pattern")).toBeInTheDocument();
     expect(screen.getAllByText("Emeka Tailor")[0]).toBeInTheDocument();
-    expect(screen.getByText("HIGH Priority")).toBeInTheDocument();
+    expect(screen.getByText("HIGH")).toBeInTheDocument();
   });
 });

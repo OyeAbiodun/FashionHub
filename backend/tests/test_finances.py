@@ -33,6 +33,7 @@ async def order(client, customer_id: str, discount: str = "500.00") -> dict:
             "customer_id": customer_id,
             "order_date": "2026-08-09",
             "due_date": "2026-08-20",
+            "reference_image": "data:image/png;base64,AA==",
             "discount_amount": discount,
             "items": [
                 {"garment_type": "Agbada", "quantity": 2, "unit_price": "1000.10"},
@@ -79,6 +80,7 @@ async def test_discount_above_subtotal_and_spoofed_financial_fields_are_rejected
             "customer_id": customer_record["id"],
             "order_date": "2026-08-09",
             "due_date": "2026-08-20",
+            "reference_image": "data:image/png;base64,AA==",
             "discount_amount": "10.01",
             "subtotal": "1.00",
             "items": [{"garment_type": "Top", "quantity": 1, "unit_price": "10.00"}],

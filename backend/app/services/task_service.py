@@ -8,9 +8,69 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.business import Business
 from app.models.customer import Customer
 from app.models.order import Order
-from app.models.task import Task, TaskPriority, TaskStatus
+from app.models.task import Task, TaskComment, TaskPriority, TaskStatus
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskListResponse, TaskPublic, TaskUpdate
+from app.schemas.task import TaskCommentPublic, TaskCreate, TaskListResponse, TaskPublic, TaskUpdate
+
+
+def task_comment_to_public(comment: TaskComment) -> TaskCommentPublic:
+    author_name = " ".join(
+        part for part in [comment.author.first_name, comment.author.last_name] if part
+    )
+    return TaskCommentPublic(
+        id=comment.id,
+        task_id=comment.task_id,
+        author_id=comment.author_id,
+        author_name=author_name,
+        body=comment.body,
+        created_at=comment.created_at,
+    )
+
+
+async def list_task_comments(
+    session: AsyncSession, business: Business, task_id: uuid.UUID
+) -> list[TaskCommentPublic]:
+    task = (
+        await session.execute(
+            select(Task.id).where(Task.id == task_id, Task.business_id == business.id)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    comments = (
+        (
+            await session.execute(
+                select(TaskComment)
+                .where(TaskComment.task_id == task_id, TaskComment.business_id == business.id)
+                .order_by(TaskComment.created_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [task_comment_to_public(item) for item in comments]
+
+
+async def add_task_comment(
+    session: AsyncSession, business: Business, task_id: uuid.UUID, author: User, body: str
+) -> TaskCommentPublic:
+    task = (
+        await session.execute(
+            select(Task.id).where(Task.id == task_id, Task.business_id == business.id)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    comment = TaskComment(
+        business_id=business.id, task_id=task_id, author_id=author.id, body=body.strip()
+    )
+    session.add(comment)
+    await session.commit()
+    stmt = select(TaskComment).where(
+        TaskComment.id == comment.id, TaskComment.business_id == business.id
+    )
+    saved = (await session.execute(stmt)).scalar_one()
+    return task_comment_to_public(saved)
 
 
 def task_to_public(task: Task) -> TaskPublic:
@@ -69,9 +129,7 @@ async def list_tasks(
         base_stmt = base_stmt.where(Task.assigned_to_id == assigned_to_id)
     if search and search.strip():
         term = f"%{search.strip()}%"
-        base_stmt = base_stmt.where(
-            (Task.title.ilike(term)) | (Task.description.ilike(term))
-        )
+        base_stmt = base_stmt.where((Task.title.ilike(term)) | (Task.description.ilike(term)))
     if overdue_only:
         now = datetime.now(UTC)
         base_stmt = base_stmt.where(

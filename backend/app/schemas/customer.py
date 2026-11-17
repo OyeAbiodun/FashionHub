@@ -17,7 +17,7 @@ class CustomerBase(BaseModel):
     last_name: str | None = Field(default=None, max_length=100)
     alternate_phone: str | None = Field(default=None, max_length=40)
     email: EmailStr | None = None
-    gender: str | None = Field(default=None, max_length=40)
+    gender: str | None = Field(default=None, max_length=10)
     birthday: date | None = None
     address: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=5000)
@@ -26,6 +26,16 @@ class CustomerBase(BaseModel):
     @classmethod
     def normalize_optional_string(cls, value: str | None) -> str | None:
         return blank_to_none(value)
+
+    @field_validator("gender")
+    @classmethod
+    def validate_gender(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized not in {"MALE", "FEMALE"}:
+            raise ValueError("Gender must be Male or Female.")
+        return normalized
 
     @field_validator("email", mode="before")
     @classmethod

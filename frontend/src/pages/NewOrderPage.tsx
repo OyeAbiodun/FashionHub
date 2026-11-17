@@ -19,6 +19,7 @@ import { useAuth } from "../hooks/useAuth";
 import { customerFullName } from "../lib/orders";
 import { decimalProduct, formatMoney, moneyValue } from "../lib/money";
 import type { CreateOrderItemInput } from "../types/order";
+import type { PaymentMethod } from "../types/payment";
 import {
   Card,
   PageContainer,
@@ -62,7 +63,11 @@ export function NewOrderPage() {
   );
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [referenceImage, setReferenceImage] = useState("");
   const [discountAmount, setDiscountAmount] = useState("0.00");
+  const [deliveryCharge, setDeliveryCharge] = useState("0.00");
+  const [initialPaymentAmount, setInitialPaymentAmount] = useState("");
+  const [initialPaymentMethod, setInitialPaymentMethod] = useState<PaymentMethod>("TRANSFER");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const customersQuery = useCustomers({
@@ -89,7 +94,7 @@ export function NewOrderPage() {
       ),
     [items],
   );
-  const total = Math.max(subtotal - moneyValue(discountAmount), 0);
+  const total = Math.max(subtotal - moneyValue(discountAmount) + moneyValue(deliveryCharge), 0);
 
   useEffect(() => {
     if (preselectedCustomerId) {
@@ -160,6 +165,18 @@ export function NewOrderPage() {
       setError("Discount cannot exceed the subtotal.");
       return;
     }
+    if (moneyValue(deliveryCharge) < 0) {
+      setError("Delivery charge cannot be negative.");
+      return;
+    }
+    if (initialPaymentAmount && (moneyValue(initialPaymentAmount) <= 0 || moneyValue(initialPaymentAmount) > total)) {
+      setError("Initial payment must be greater than zero and cannot exceed the order total.");
+      return;
+    }
+    if (!referenceImage) {
+      setError("Capture or attach an order reference photo before creating the order.");
+      return;
+    }
     setError("");
     try {
       const order = await createMutation.mutateAsync({
@@ -167,8 +184,12 @@ export function NewOrderPage() {
         order_date: orderDate,
         due_date: dueDate,
         notes: notes.trim() || null,
+        reference_image: referenceImage || null,
         discount_amount: discountAmount || "0.00",
+        delivery_charge: business?.delivery_charges_enabled ? deliveryCharge || "0.00" : "0.00",
         items: payloadItems,
+        initial_payment_amount: initialPaymentAmount || null,
+        initial_payment_method: initialPaymentAmount ? initialPaymentMethod : null,
       });
       navigate(`/orders/${order.id}`, { replace: true });
     } catch (apiError) {
@@ -322,11 +343,11 @@ export function NewOrderPage() {
                       </label>
                       <label>
                         <span className="text-sm font-medium text-ink">
-                          Unit price
+                          Price per garment
                         </span>
                         <input
                           className={inputStyles}
-                          aria-label={`Unit price garment ${index + 1}`}
+                          aria-label={`Price per garment ${index + 1}`}
                           type="number"
                           inputMode="decimal"
                           min="0"
@@ -340,7 +361,7 @@ export function NewOrderPage() {
                         />
                       </label>
                       <div className="self-end rounded-lg border border-border bg-white px-3 py-3 text-sm">
-                        <span className="text-stone-600">Line total </span>
+                        <span className="text-stone-600">Quantity total </span>
                         <strong>
                           {formatMoney(
                             decimalProduct(item.unit_price, item.quantity),
@@ -513,6 +534,14 @@ export function NewOrderPage() {
                   onChange={(event) => setDiscountAmount(event.target.value)}
                 />
               </label>
+              <label className="mt-4 block max-w-md"><span className="text-sm font-medium text-ink">Order reference photo required</span><input className={inputStyles} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 1_000_000) { setError("Reference photos must be 1 MB or smaller."); return; } const reader = new FileReader(); reader.onload = () => setReferenceImage(typeof reader.result === "string" ? reader.result : ""); reader.readAsDataURL(file); }} /><span className="mt-1 block text-xs text-muted">Required reference photo. JPEG, PNG or WebP up to 1 MB.</span>{referenceImage ? <img className="mt-3 max-h-56 rounded-lg border border-border object-contain" src={referenceImage} alt="Order reference" /> : null}</label>
+              {business?.delivery_charges_enabled ? (
+                <label className="mt-4 block max-w-xs">
+                  <span className="text-sm font-medium text-ink">Delivery charge optional</span>
+                  <input className={inputStyles} type="number" inputMode="decimal" min="0" step="0.01" value={deliveryCharge} onChange={(event) => setDeliveryCharge(event.target.value)} />
+                  <span className="mt-1 block text-xs text-muted">Enter this only when the order will be delivered. It is included in the order total.</span>
+                </label>
+              ) : null}
               <dl className="mt-5 max-w-sm space-y-2 border-t border-stone-200 pt-4 text-sm">
                 <MoneyRow
                   label="Subtotal"
@@ -524,6 +553,9 @@ export function NewOrderPage() {
                   value={moneyValue(discountAmount)}
                   currency={currency}
                 />
+                {business?.delivery_charges_enabled && moneyValue(deliveryCharge) > 0 ? (
+                  <MoneyRow label="Delivery charge" value={moneyValue(deliveryCharge)} currency={currency} />
+                ) : null}
                 <MoneyRow
                   label="Total"
                   value={total}
@@ -531,6 +563,14 @@ export function NewOrderPage() {
                   strong
                 />
               </dl>
+              <div className="mt-5 border-t border-border pt-4">
+                <h3 className="font-medium text-ink">Initial payment optional</h3>
+                <p className="mt-1 text-sm text-muted">Record money received when placing this order. You can record later payments from the order.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label><span className="text-sm font-medium text-ink">Amount</span><input className={inputStyles} type="number" inputMode="decimal" min="0.01" step="0.01" max={total} value={initialPaymentAmount} onChange={(event) => setInitialPaymentAmount(event.target.value)} placeholder="No initial payment" /></label>
+                  {initialPaymentAmount ? <label><span className="text-sm font-medium text-ink">Payment method</span><select className={inputStyles} value={initialPaymentMethod} onChange={(event) => setInitialPaymentMethod(event.target.value as typeof initialPaymentMethod)}>{["CASH", "TRANSFER", "CARD", "POS", "OTHER"].map((method) => <option key={method} value={method}>{method}</option>)}</select></label> : null}
+                </div>
+              </div>
             </Card>
 
             {error ? (

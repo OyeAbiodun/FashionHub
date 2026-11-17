@@ -21,6 +21,22 @@ import { MeasurementsPage } from "./MeasurementsPage";
 
 vi.mock("../api/customers");
 vi.mock("../api/measurements");
+vi.mock("../api/subscription", () => ({
+  getSubscriptionStatus: vi.fn().mockResolvedValue({
+    required: false,
+    can_use_app: true,
+    plans: [],
+    selected_plan: null,
+    selected_at: null,
+    billing_provider: "MANUAL",
+    billing_mode: "TEST",
+    subscription_status: null,
+    period_end: null,
+    cancel_at_period_end: false,
+    automatic_renewal: false,
+    can_cancel_renewal: false,
+  }),
+}));
 
 const customer: Customer = {
   id: "customer-1",

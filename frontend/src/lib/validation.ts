@@ -145,6 +145,9 @@ export const businessSettingsSchema = z.object({
   timezone: z.enum(supportedTimezones),
   invoice_notes: z.string().max(5000),
   invoice_footer: z.string().max(2000),
+  delivery_charges_enabled: z.boolean(),
+  order_status_configuration: z.object({ labels: z.record(z.string()), transitions: z.record(z.array(z.string())) }),
+  audit_configuration: z.object({ enabled: z.boolean(), capture_ip: z.boolean(), capture_device: z.boolean(), capture_details: z.boolean() }),
 });
 
 export type BusinessSettingsFormValues = z.infer<typeof businessSettingsSchema>;

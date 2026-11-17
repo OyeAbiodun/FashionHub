@@ -16,6 +16,8 @@ class PaymentCreate(BaseModel):
     reference: str | None = Field(default=None, max_length=255)
     notes: str | None = Field(default=None, max_length=5000)
     paid_at: datetime | None = None
+    installment_id: UUID | None = None
+    apply_automatically: bool = True
 
     @field_validator("reference", "notes", mode="before")
     @classmethod
@@ -36,10 +38,19 @@ class PaymentResponse(BaseModel):
     received_by_name: str
     paid_at: datetime
     created_at: datetime
+    allocations: list["PaymentAllocationResponse"] = Field(default_factory=list)
+
+
+class PaymentAllocationResponse(BaseModel):
+    amount: Decimal
+    is_advance: bool
+    installment_id: UUID | None
+    label: str
 
 
 class PaymentListItem(PaymentResponse):
     order_number: str
+    customer_name: str
 
 
 class PaymentListResponse(BaseModel):
@@ -48,6 +59,20 @@ class PaymentListResponse(BaseModel):
     page_size: int
     total: int
     total_pages: int
+
+
+class PaymentSummaryResponse(BaseModel):
+    successful_count: int
+    successful_amount: Decimal
+    today_count: int
+    today_amount: Decimal
+    month_count: int
+    month_amount: Decimal
+    pending_count: int
+    today_start: datetime
+    tomorrow_start: datetime
+    month_start: datetime
+    next_month_start: datetime
 
 
 class InvoiceCreate(BaseModel):
@@ -99,6 +124,7 @@ class InvoiceItemResponse(BaseModel):
 class InvoiceFinancialSummary(BaseModel):
     subtotal: Decimal
     discount_amount: Decimal
+    delivery_charge: Decimal = Decimal("0.00")
     total: Decimal
     amount_paid: Decimal
     outstanding_balance: Decimal
@@ -122,3 +148,6 @@ class InvoiceResponse(BaseModel):
 
 def total_pages(total: int, page_size: int) -> int:
     return math.ceil(total / page_size) if total else 0
+
+
+PaymentResponse.model_rebuild()

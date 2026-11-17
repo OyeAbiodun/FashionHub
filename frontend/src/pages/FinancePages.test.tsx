@@ -175,7 +175,7 @@ beforeEach(() => {
   vi.mocked(paymentsApi.listOrderPayments).mockResolvedValue([]);
   vi.mocked(paymentsApi.createOrderPayment).mockResolvedValue(payment);
   vi.mocked(paymentsApi.listCustomerPayments).mockResolvedValue({
-    items: [{ ...payment, order_number: "ORD-000001" }],
+    items: [{ ...payment, order_number: "ORD-000001", customer_name: "Bisi Adeleke" }],
     page: 1,
     page_size: 5,
     total: 1,
@@ -193,7 +193,7 @@ test("create order renders pricing and updates line total and subtotal", async (
     authenticated: true,
     route: "/orders/new?customerId=customer-1",
   });
-  const unitPrice = await screen.findByLabelText("Unit price garment 1");
+  const unitPrice = await screen.findByLabelText("Price per garment 1");
   await userEvent.clear(unitPrice);
   await userEvent.type(unitPrice, "45000");
   await userEvent.clear(screen.getByLabelText(/quantity/i));
@@ -207,7 +207,7 @@ test("discount updates total and invalid discount is rejected", async () => {
     route: "/orders/new?customerId=customer-1",
   });
   await userEvent.type(await screen.findByLabelText(/garment type/i), "Agbada");
-  const unitPrice = screen.getByLabelText("Unit price garment 1");
+  const unitPrice = screen.getByLabelText("Price per garment 1");
   await userEvent.clear(unitPrice);
   await userEvent.type(unitPrice, "100");
   const discount = screen.getByLabelText(/^discount$/i);

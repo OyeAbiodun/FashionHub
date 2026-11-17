@@ -2,7 +2,7 @@ import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import { useInvoice } from "../hooks/useInvoices";
-import { formatMoney } from "../lib/money";
+import { formatMoney, moneyValue } from "../lib/money";
 import { formatStatus } from "../lib/orders";
 import { formatDate } from "../lib/date";
 import {
@@ -43,6 +43,7 @@ export function InvoicePage() {
     `Hello ${invoice.customer.name},\n\nHere is your invoice receipt from *${invoice.business.name}*:\n` +
       `Invoice #: ${invoice.invoice_number}\n` +
       `Order #: ${invoice.order.order_number}\n` +
+      `Delivery Charge: ${formatMoney(invoice.financial_summary.delivery_charge ?? "0.00", currency)}\n` +
       `Total: ${formatMoney(invoice.financial_summary.total, currency)}\n` +
       `Paid: ${formatMoney(invoice.financial_summary.amount_paid, currency)}\n` +
       `Balance Due: ${formatMoney(invoice.financial_summary.outstanding_balance, currency)}\n\n` +
@@ -203,6 +204,12 @@ export function InvoicePage() {
               currency,
             )}
           />
+          {moneyValue(invoice.financial_summary.delivery_charge ?? "0.00") > 0 ? (
+            <SummaryRow
+              label="Delivery charge"
+              value={formatMoney(invoice.financial_summary.delivery_charge ?? "0.00", currency)}
+            />
+          ) : null}
           <SummaryRow
             label="Grand Total"
             value={formatMoney(invoice.financial_summary.total, currency)}

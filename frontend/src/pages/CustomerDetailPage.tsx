@@ -147,7 +147,7 @@ export function CustomerDetailPage() {
             <Detail label="Phone" value={customer.phone} />
             <Detail label="Alternate phone" value={customer.alternate_phone} />
             <Detail label="Email" value={customer.email} />
-            <Detail label="Gender" value={customer.gender} />
+            <Detail label="Gender" value={customer.gender ? customer.gender[0] + customer.gender.slice(1).toLowerCase() : null} />
             <Detail
               label="Birthday"
               value={customer.birthday ? formatDate(customer.birthday) : null}

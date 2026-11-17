@@ -33,6 +33,15 @@ export interface TaskListResponse {
   overdue_count: number;
 }
 
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_name: string;
+  body: string;
+  created_at: string;
+}
+
 export interface TaskCreatePayload {
   title: string;
   description?: string | null;
@@ -80,4 +89,14 @@ export async function updateTask(
 
 export async function deleteTask(taskId: string): Promise<void> {
   await apiClient.delete(`/tasks/${taskId}`);
+}
+
+export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> {
+  const response = await apiClient.get<TaskComment[]>(`/tasks/${taskId}/comments`);
+  return response.data;
+}
+
+export async function addTaskComment(taskId: string, body: string): Promise<TaskComment> {
+  const response = await apiClient.post<TaskComment>(`/tasks/${taskId}/comments`, { body });
+  return response.data;
 }

@@ -1,9 +1,12 @@
+import re
+from urllib.parse import unquote
 from uuid import UUID
 
 from conftest import register_payload
 from sqlalchemy import select
 
 from app.models.business import Business
+from app.services.email_service import capture_email_provider
 
 
 async def register_owner(client, email: str) -> dict[str, str]:
@@ -19,19 +22,30 @@ def use_cookies(client, cookies: dict[str, str]) -> None:
 
 
 async def add_staff(client, *, email: str, permissions: list[str] | None = None) -> dict:
+    owner_cookies = dict(client.cookies)
     response = await client.post(
         "/api/v1/team",
         json={
             "first_name": "Studio",
             "last_name": "Staff",
             "email": email,
-            "password": "StaffPass123!",
             "role": "STAFF",
             "permissions": permissions,
         },
     )
     assert response.status_code == 201
-    return response.json()
+    message = next(item for item in capture_email_provider.messages if item.to == email)
+    match = re.search(r"token=([^\s&]+)", message.text)
+    assert match
+    accepted = await client.post(
+        "/api/v1/team/invitations/accept",
+        json={"token": unquote(match.group(1)), "password": "StaffPass123!"},
+    )
+    assert accepted.status_code == 200, accepted.text
+    client.cookies.clear()
+    for name, value in owner_cookies.items():
+        client.cookies.set(name, value)
+    return accepted.json()["user"]
 
 
 async def test_staff_cannot_manage_team_roles_or_escalate_privileges(client):
@@ -51,7 +65,6 @@ async def test_staff_cannot_manage_team_roles_or_escalate_privileges(client):
             "first_name": "Bad",
             "last_name": "Actor",
             "email": "badactor@example.com",
-            "password": "StrongPass123!",
             "role": "SUPER_ADMIN",
         },
     )
@@ -66,7 +79,6 @@ async def test_staff_cannot_manage_team_roles_or_escalate_privileges(client):
             "first_name": "Also",
             "last_name": "Blocked",
             "email": "also-blocked@example.com",
-            "password": "StrongPass123!",
             "role": "SUPER_ADMIN",
         },
     )
@@ -149,6 +161,7 @@ async def test_disabled_feature_and_cross_tenant_task_relationship_are_denied(cl
                 "customer_id": customer["id"],
                 "order_date": "2026-08-20",
                 "due_date": "2026-08-21",
+                "reference_image": "data:image/png;base64,AA==",
                 "items": [{"garment_type": "Agbada", "unit_price": "1.00"}],
             },
         )

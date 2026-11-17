@@ -51,7 +51,7 @@ def _order_financials(business_id: uuid.UUID):
     )
     subtotal = func.coalesce(item_totals.c.subtotal, ZERO)
     paid = func.coalesce(payment_totals.c.paid, ZERO)
-    raw_total = subtotal - Order.discount_amount
+    raw_total = subtotal - Order.discount_amount + Order.delivery_charge
     order_total = case((raw_total > 0, raw_total), else_=ZERO)
     raw_outstanding = order_total - paid
     outstanding = case((raw_outstanding > 0, raw_outstanding), else_=ZERO)

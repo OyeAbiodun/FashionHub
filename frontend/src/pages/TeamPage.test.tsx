@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as rolesApi from "../api/roles";
 import * as teamApi from "../api/team";
 import { renderWithAuth, session } from "../test/render";
 import { TeamPage } from "./TeamPage";
@@ -11,13 +12,25 @@ vi.mock("../api/team", async (importOriginal) => {
   return {
     ...actual,
     fetchTeamMembers: vi.fn(),
+    fetchTeamInvitations: vi.fn(),
     addStaffMember: vi.fn(),
     updateStaffMember: vi.fn(),
   };
 });
+vi.mock("../api/roles", async (importOriginal) => {
+  const actual = await importOriginal<typeof rolesApi>();
+  return { ...actual, fetchRoles: vi.fn() };
+});
 
 describe("TeamPage", () => {
+  beforeEach(() => {
+    vi.mocked(teamApi.fetchTeamMembers).mockResolvedValue([]);
+    vi.mocked(teamApi.fetchTeamInvitations).mockResolvedValue([]);
+    vi.mocked(rolesApi.fetchRoles).mockResolvedValue([]);
+  });
+
   it("renders team members list and metrics", async () => {
+    vi.mocked(teamApi.fetchTeamInvitations).mockResolvedValue([]);
     vi.mocked(teamApi.fetchTeamMembers).mockResolvedValueOnce([
       {
         id: session.user.id,
@@ -39,7 +52,7 @@ describe("TeamPage", () => {
     expect(screen.getByText("Full Business Access")).toBeInTheDocument();
   });
 
-  it("opens add staff modal and submits new staff member", async () => {
+  it("sends a staff invitation without asking the owner for a password", async () => {
     const user = userEvent.setup();
 
     vi.mocked(teamApi.fetchTeamMembers).mockResolvedValueOnce([
@@ -55,6 +68,7 @@ describe("TeamPage", () => {
         is_active: true,
       },
     ]);
+    vi.mocked(teamApi.fetchTeamInvitations).mockResolvedValue([]);
 
     vi.mocked(teamApi.addStaffMember).mockResolvedValueOnce({
       id: "staff-2",
@@ -65,12 +79,15 @@ describe("TeamPage", () => {
       phone: null,
       role: "STAFF",
       permissions: ["orders:read"],
-      is_active: true,
+      custom_role_id: null,
+      status: "PENDING",
+      expires_at: "2026-11-18T12:00:00Z",
+      created_at: "2026-11-16T12:00:00Z",
     });
 
     renderWithAuth(<TeamPage />, { authenticated: true, route: "/team" });
 
-    const addBtn = await screen.findByRole("button", { name: /Add Staff Member/i });
+    const addBtn = await screen.findByRole("button", { name: /Invite Staff/i });
     await user.click(addBtn);
 
     const dialog = screen.getByRole("dialog");
@@ -81,14 +98,12 @@ describe("TeamPage", () => {
     const lastNameInput = inputs[1];  // Last Name
     const emailInput = inputs[2];     // Email Address
 
-    const passwordInput = within(dialog).getByLabelText("Temporary Password");
-
     await user.type(firstNameInput, "Emeka");
     await user.type(lastNameInput, "Tailor");
     await user.type(emailInput, "emeka@example.com");
-    await user.type(passwordInput, "StaffPass123!");
 
-    const submitBtn = within(dialog).getByRole("button", { name: /Add Staff Member/i });
+    expect(within(dialog).queryByLabelText(/password/i)).not.toBeInTheDocument();
+    const submitBtn = within(dialog).getByRole("button", { name: /Send Invitation/i });
     await user.click(submitBtn);
 
     await waitFor(

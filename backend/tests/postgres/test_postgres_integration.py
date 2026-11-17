@@ -13,6 +13,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import get_db_session
+from app.core.measurement_defaults import SYSTEM_MEASUREMENT_TEMPLATES
 from app.main import app
 from app.models.business import Business
 from app.models.finance import Invoice, InvoiceCounter, Payment, PaymentStatus
@@ -108,7 +109,7 @@ async def postgres_context() -> AsyncGenerator[PostgresContext, None]:
         if identity[0] != "fashionos_test":
             pytest.fail(f"Refusing PostgreSQL tests against database {identity[0]!r}")
         revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "20260822_0014":
+        if revision != "20261117_0032":
             pytest.fail(f"PostgreSQL test database is not at head: {revision!r}")
 
     async def override_session() -> AsyncGenerator[AsyncSession, None]:
@@ -154,6 +155,7 @@ def order_payload(
         "customer_id": customer_id,
         "order_date": today.isoformat(),
         "due_date": (today + timedelta(days=14)).isoformat(),
+        "reference_image": "data:image/png;base64,AA==",
         "items": [
             {
                 "garment_type": label,
@@ -238,9 +240,17 @@ async def test_postgres_schema_and_migration_seed(postgres_context: PostgresCont
                 )
             ).scalars()
         )
-        field_count = await session.scalar(text("SELECT count(*) FROM measurement_template_fields"))
+        field_count = await session.scalar(
+            text(
+                "SELECT count(*) FROM measurement_template_fields AS fields "
+                "JOIN measurement_templates AS templates ON templates.id = fields.template_id "
+                "WHERE templates.is_system_template IS TRUE AND templates.business_id IS NULL"
+            )
+        )
     assert names == expected_templates
-    assert field_count == 64
+    assert field_count == sum(
+        len(fields) for _name, _garment_type, fields in SYSTEM_MEASUREMENT_TEMPLATES
+    )
 
 
 async def test_postgres_order_counter_concurrency_and_tenant_isolation(

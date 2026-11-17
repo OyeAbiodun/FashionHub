@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -23,6 +24,8 @@ DEFAULT_BUSINESS_FEATURES = [
     "reports",
     "team",
     "tasks",
+    "inventory",
+    "communication",
 ]
 
 
@@ -42,6 +45,23 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     invoice_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     invoice_footer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    installment_plans_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    delivery_charges_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    proof_of_delivery_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    order_status_configuration: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    audit_configuration: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=lambda: {"enabled": True, "capture_ip": False, "capture_device": False},
+    )
     enabled_features: Mapped[list[str]] = mapped_column(
         JSON,
         nullable=False,
@@ -53,6 +73,8 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    subscription_plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    subscription_selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     users: Mapped[list[User]] = relationship(
         back_populates="business", cascade="all, delete-orphan"

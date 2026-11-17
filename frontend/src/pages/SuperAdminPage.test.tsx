@@ -13,6 +13,9 @@ vi.mock("../api/admin", async (importOriginal) => {
     fetchPlatformMetrics: vi.fn(),
     fetchAdminBusinesses: vi.fn(),
     fetchPlatformActivity: vi.fn(),
+    fetchAdminAudit: vi.fn(),
+    fetchPlatformAuditConfiguration: vi.fn(),
+    updatePlatformAuditConfiguration: vi.fn(),
     fetchPlatformEmailConfiguration: vi.fn(),
     updateBusinessEntitlements: vi.fn(),
     updatePlatformEmailConfiguration: vi.fn(),
@@ -23,6 +26,34 @@ vi.mock("../api/admin", async (importOriginal) => {
 
 describe("SuperAdminPage", () => {
   beforeEach(() => {
+    vi.mocked(adminApi.fetchPlatformMetrics).mockResolvedValue({
+      total_businesses: 0,
+      active_businesses: 0,
+      total_users: 0,
+      total_customers: 0,
+      total_orders: 0,
+      collected_by_currency: {},
+    });
+    vi.mocked(adminApi.fetchAdminBusinesses).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+    });
+    vi.mocked(adminApi.fetchPlatformActivity).mockResolvedValue([]);
+    vi.mocked(adminApi.fetchAdminAudit).mockResolvedValue([]);
+    vi.mocked(adminApi.fetchPlatformAuditConfiguration).mockResolvedValue({
+      enabled: true,
+      capture_ip: true,
+      capture_device: true,
+      capture_details: true,
+    });
+    vi.mocked(adminApi.updatePlatformAuditConfiguration).mockResolvedValue({
+      enabled: true,
+      capture_ip: true,
+      capture_device: true,
+      capture_details: true,
+    });
     vi.mocked(adminApi.fetchPlatformEmailConfiguration).mockResolvedValue({
       id: "email-config-1",
       provider: "GMAIL",
@@ -57,6 +88,9 @@ describe("SuperAdminPage", () => {
           name: "Lagos Bespoke Studio",
           email: "owner@lagos.ng",
           phone: "+2348011112222",
+          owner_name: "Ada Owner",
+          owner_email: "owner@lagos.ng",
+          owner_phone: "+2348011112222",
           address: "Lagos",
           logo_url: null,
           currency: "NGN",
@@ -66,6 +100,7 @@ describe("SuperAdminPage", () => {
           is_active: true,
           created_at: new Date().toISOString(),
           user_count: 2,
+          active_user_count: 2,
           customer_count: 15,
           order_count: 8,
           total_revenue: "45000.00",
@@ -81,8 +116,10 @@ describe("SuperAdminPage", () => {
     renderWithAuth(<SuperAdminPage />, { authenticated: true, route: "/admin" });
 
     expect(screen.getByText("Super Admin Control Center")).toBeInTheDocument();
+    expect(await screen.findByText("NGN 150000.00")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Business Tenants" }));
     expect(await screen.findByText("Lagos Bespoke Studio")).toBeInTheDocument();
-    expect(screen.getByText("NGN 150000.00")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Platform Settings" }));
     expect(screen.getByText("Platform Settings — Email Configuration")).toBeInTheDocument();
   });
 
@@ -105,6 +142,9 @@ describe("SuperAdminPage", () => {
           name: "Abuja Tailors",
           email: "owner@abuja.ng",
           phone: "+2348099998888",
+          owner_name: "Tunde Owner",
+          owner_email: "owner@abuja.ng",
+          owner_phone: "+2348099998888",
           address: "Abuja",
           logo_url: null,
           currency: "NGN",
@@ -114,6 +154,7 @@ describe("SuperAdminPage", () => {
           is_active: true,
           created_at: new Date().toISOString(),
           user_count: 1,
+          active_user_count: 1,
           customer_count: 5,
           order_count: 3,
           total_revenue: "20000.00",
@@ -130,6 +171,9 @@ describe("SuperAdminPage", () => {
       name: "Abuja Tailors",
       email: "owner@abuja.ng",
       phone: "+2348099998888",
+      owner_name: "Tunde Owner",
+      owner_email: "owner@abuja.ng",
+      owner_phone: "+2348099998888",
       address: "Abuja",
       logo_url: null,
       currency: "NGN",
@@ -139,6 +183,7 @@ describe("SuperAdminPage", () => {
       is_active: true,
       created_at: new Date().toISOString(),
       user_count: 1,
+      active_user_count: 1,
       customer_count: 5,
       order_count: 3,
       total_revenue: "20000.00",
@@ -146,6 +191,7 @@ describe("SuperAdminPage", () => {
 
     renderWithAuth(<SuperAdminPage />, { authenticated: true, route: "/admin" });
 
+    await user.click(await screen.findByRole("tab", { name: "Business Tenants" }));
     const entBtn = await screen.findByRole("button", { name: /Entitlements/i });
     await user.click(entBtn);
 
@@ -191,6 +237,7 @@ describe("SuperAdminPage", () => {
     });
 
     renderWithAuth(<SuperAdminPage />, { authenticated: true, route: "/admin" });
+    await user.click(await screen.findByRole("tab", { name: "Platform Settings" }));
     await user.click(await screen.findByRole("button", { name: /save configuration/i }));
 
     await waitFor(() => {

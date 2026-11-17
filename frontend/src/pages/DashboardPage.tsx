@@ -99,6 +99,7 @@ export function DashboardPage() {
               label="Collected This Month"
               value={formatMoney(summary.data.collected_this_month, currency)}
               supporting="Successful payments"
+              to="/payments"
             />
             <MetricCard
               icon={WalletCards}
@@ -190,7 +191,7 @@ export function DashboardPage() {
           ) : null}
           <div className="divide-y divide-border">
             {dueOrders.data?.map((order) => (
-              <OrderRow order={order} currency={currency} key={order.id} />
+              <OrderRow order={order} currency={currency} statusLabel={business?.order_status_configuration?.labels?.[order.status] ?? formatStatus(order.status)} key={order.id} />
             ))}
           </div>
         </DashboardSection>
@@ -226,7 +227,7 @@ export function DashboardPage() {
           ) : null}
           <div className="divide-y divide-border">
             {recentOrders.data?.map((order) => (
-              <OrderRow order={order} currency={currency} key={order.id} />
+              <OrderRow order={order} currency={currency} statusLabel={business?.order_status_configuration?.labels?.[order.status] ?? formatStatus(order.status)} key={order.id} />
             ))}
           </div>
         </DashboardSection>
@@ -376,9 +377,11 @@ function AlertRow({ alert }: { alert: DashboardAlert }) {
 function OrderRow({
   order,
   currency,
+  statusLabel,
 }: {
   order: DashboardOrderItem;
   currency: string;
+  statusLabel: string;
 }) {
   return (
     <Link
@@ -394,7 +397,7 @@ function OrderRow({
             </p>
             <p className="text-sm text-muted">{order.customer_name}</p>
           </div>
-          <StatusBadge status={order.status} />
+          <StatusBadge status={order.status} label={statusLabel} />
         </div>
         <p className="mt-2 truncate text-sm text-stone-700">
           {order.garment_summary || "Garment order"}

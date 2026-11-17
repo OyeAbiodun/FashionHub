@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import create_token, hash_password, verify_password
 from app.models.business import Business
+from app.models.membership import BusinessMembership
 from app.models.password_reset import PasswordResetToken
 from app.models.password_reset_request import PasswordResetRequest
 from app.models.user import User, UserRole
@@ -74,6 +75,15 @@ async def register_owner(session: AsyncSession, payload: RegisterRequest) -> Use
     seed_default_templates_for_business(business)
     session.add(user)
     try:
+        await session.flush()
+        session.add(
+            BusinessMembership(
+                business_id=business.id,
+                user_id=user.id,
+                role=UserRole.OWNER.value,
+                is_active=True,
+            )
+        )
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()

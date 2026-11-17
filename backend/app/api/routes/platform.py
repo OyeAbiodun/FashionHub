@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_super_admin
+from app.api.dependencies import get_current_super_admin, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.database import get_db_session
 from app.models.user import User
@@ -12,6 +12,7 @@ from app.schemas.platform_email import (
     PlatformEmailConfigurationPublic,
     PlatformEmailConfigurationUpdate,
     PlatformEmailTestRequest,
+    PlatformSupportContact,
 )
 from app.services.admin_service import record_admin_action
 from app.services.email_service import (
@@ -22,6 +23,18 @@ from app.services.email_service import (
 )
 
 router = APIRouter(prefix="/platform", tags=["platform"])
+
+
+@router.get("/support", response_model=PlatformSupportContact)
+async def get_platform_support_contact(
+    _: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PlatformSupportContact:
+    configuration = await get_platform_email_configuration(session)
+    return PlatformSupportContact(
+        support_email=configuration.support_email if configuration else None,
+        support_whatsapp=configuration.support_whatsapp if configuration else None,
+    )
 
 
 @router.get("/email", response_model=PlatformEmailConfigurationPublic)

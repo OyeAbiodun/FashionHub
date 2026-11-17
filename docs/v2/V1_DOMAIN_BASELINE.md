@@ -50,7 +50,7 @@ erDiagram
 
 `OrderItem` is a line within an order. It represents a garment type or a batch of the same garment (`quantity >= 1`), description, price, optional measurement profile, style URL, notes, and display position. It does not carry `business_id`; tenant ownership is reached through its order. The linked measurement profile is validated to belong to the same business and same customer.
 
-The order update API can change the due date, notes, discount, and item prices. It does not add, remove, split, or independently progress items after creation. Delivered and cancelled orders are terminal and financially locked.
+The order update API can change the due date, notes, discount, and item prices. It does not add, remove, split, or independently progress items after creation. V1 has no pickup/delivery fulfillment method or handoff history. Delivered and cancelled orders are terminal and financially locked.
 
 ## Production
 
@@ -62,7 +62,7 @@ Transitions are validated by `ORDER_TRANSITIONS`. Every order change appends `Or
 
 ## Finance
 
-Prices and discounts use `NUMERIC(12,2)`/`Decimal`. The authoritative paid amount is the sum of `SUCCESSFUL` `Payment` rows; there is no editable `amount_paid`. A payment is an append-only manual ledger entry through the public API, records the authenticated receiving user, and cannot be updated or deleted. PostgreSQL row locking prevents concurrent overpayment.
+Prices and discounts use `NUMERIC(12,2)`/`Decimal`. V1 already supports multiple manual partial payments, so customers can pay an order in more than one transaction. The authoritative paid amount is the sum of `SUCCESSFUL` `Payment` rows; there is no editable `amount_paid`. V1 does not define a formal installment schedule with planned amounts and due dates. A payment is an append-only manual ledger entry through the public API, records the authenticated receiving user, and cannot be updated or deleted. PostgreSQL row locking prevents concurrent overpayment.
 
 One `Invoice` may exist per order. Invoice numbers use a business-scoped locked counter. Invoice status is synchronized and defensively derived from live order totals and successful payments. Invoice line data is projected from current order items rather than copied into invoice lines; terminal financial locking preserves delivered/cancelled stability.
 

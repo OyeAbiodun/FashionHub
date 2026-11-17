@@ -41,6 +41,7 @@ async def create_order(
             "customer_id": customer_id,
             "order_date": (due_date - timedelta(days=1)).isoformat(),
             "due_date": due_date.isoformat(),
+            "reference_image": "data:image/png;base64,AA==",
             "items": [
                 {
                     "garment_type": garment,

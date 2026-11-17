@@ -7,6 +7,10 @@ import type {
   UpdateOrderInput,
   UpdateOrderStatusInput,
 } from "../types/order";
+import type {
+  FulfillmentActionInput,
+  FulfillmentUpdateInput,
+} from "../types/fulfillment";
 
 export async function listOrders(
   params: OrderQueryParams,
@@ -60,4 +64,25 @@ export async function updateOrderStatus(
     payload,
   );
   return response.data;
+}
+
+export async function updateOrderFulfillment(
+  orderId: string,
+  payload: FulfillmentUpdateInput,
+): Promise<OrderDetail> {
+  return (await apiClient.put<OrderDetail>(`/orders/${orderId}/fulfillment`, payload)).data;
+}
+
+export async function dispatchOrderFulfillment(
+  orderId: string,
+  payload: FulfillmentActionInput = {},
+): Promise<OrderDetail> {
+  return (await apiClient.post<OrderDetail>(`/orders/${orderId}/fulfillment/dispatch`, payload)).data;
+}
+
+export async function completeOrderFulfillment(
+  orderId: string,
+  payload: FulfillmentActionInput = {},
+): Promise<OrderDetail> {
+  return (await apiClient.post<OrderDetail>(`/orders/${orderId}/fulfillment/complete`, payload)).data;
 }

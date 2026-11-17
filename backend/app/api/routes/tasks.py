@@ -9,11 +9,20 @@ from app.core.database import get_db_session
 from app.models.business import Business
 from app.models.task import TaskPriority, TaskStatus
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskListResponse, TaskPublic, TaskUpdate
+from app.schemas.task import (
+    TaskCommentCreate,
+    TaskCommentPublic,
+    TaskCreate,
+    TaskListResponse,
+    TaskPublic,
+    TaskUpdate,
+)
 from app.services.task_service import (
+    add_task_comment,
     create_task,
     delete_task,
     get_task_detail,
+    list_task_comments,
     list_tasks,
     update_task,
 )
@@ -23,6 +32,32 @@ router = APIRouter(
     tags=["tasks"],
     dependencies=[Depends(require_feature_permission("tasks", "tasks:read"))],
 )
+
+
+@router.get("/{task_id}/comments", response_model=list[TaskCommentPublic])
+async def get_task_comments(
+    task_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> list[TaskCommentPublic]:
+    return await list_task_comments(session, business, task_id)
+
+
+@router.post(
+    "/{task_id}/comments",
+    response_model=TaskCommentPublic,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_feature_permission("tasks", "tasks:write"))],
+)
+async def post_task_comment(
+    task_id: uuid.UUID,
+    payload: TaskCommentCreate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> TaskCommentPublic:
+    return await add_task_comment(session, business, task_id, user, payload.body)
 
 
 @router.get("", response_model=TaskListResponse)

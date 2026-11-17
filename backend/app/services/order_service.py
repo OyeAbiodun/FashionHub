@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import Select, func, or_, select
@@ -8,8 +9,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.timezone import business_today
 from app.models.business import Business
+from app.models.admin_audit import BusinessAuditLog
 from app.models.customer import Customer
-from app.models.finance import Payment
+from app.models.finance import Payment, PaymentAllocation, PaymentInstallment, PaymentInstallmentPlan, PaymentStatus
+from app.models.fulfillment import FulfillmentStatus, OrderFulfillment, OrderFulfillmentEvent
 from app.models.measurement import MeasurementProfile
 from app.models.order import Order, OrderCounter, OrderItem, OrderStatus, OrderStatusHistory
 from app.models.user import User
@@ -23,11 +26,16 @@ from app.schemas.order import (
     OrderListResponse,
     OrderStatusHistoryResponse,
     OrderStatusUpdate,
+    PaymentInstallmentResponse,
+    PaymentPlanResponse,
     OrderUpdate,
     total_pages,
 )
+from app.schemas.fulfillment import FulfillmentEventResponse, FulfillmentResponse
+from app.schemas.fulfillment import FulfillmentUpdate
 from app.services.customer_service import get_customer, normalize_phone
 from app.services.financial_service import (
+    allocate_payment_to_plan,
     calculate_invoice_status,
     calculate_order_subtotal,
     calculate_order_total,
@@ -35,12 +43,50 @@ from app.services.financial_service import (
     calculate_successful_payments,
 )
 
+
+def add_business_audit(session: AsyncSession, business: Business, actor: User, action: str, summary: str, request=None, details: dict | None = None) -> None:
+    configuration = business.audit_configuration or {}
+    if not configuration.get("enabled", True):
+        return
+    session.add(BusinessAuditLog(
+        business_id=business.id,
+        actor_id=actor.id,
+        action=action,
+        summary=summary,
+        details=details or {} if configuration.get("capture_details", False) else {},
+        source_ip=request.client.host if request and request.client and configuration.get("capture_ip", False) else None,
+        user_agent=(request.headers.get("user-agent", "")[:500] or None) if request and configuration.get("capture_device", False) else None,
+    ))
+
 ORDER_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
-    OrderStatus.DRAFT: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
-    OrderStatus.CONFIRMED: {OrderStatus.CUTTING, OrderStatus.CANCELLED},
-    OrderStatus.CUTTING: {OrderStatus.SEWING, OrderStatus.CANCELLED},
-    OrderStatus.SEWING: {OrderStatus.FITTING, OrderStatus.FINISHING, OrderStatus.CANCELLED},
-    OrderStatus.FITTING: {OrderStatus.SEWING, OrderStatus.FINISHING, OrderStatus.CANCELLED},
+    OrderStatus.DRAFT: {
+        OrderStatus.CONFIRMED,
+        OrderStatus.CUTTING,
+        OrderStatus.CANCELLED,
+    },
+    OrderStatus.CONFIRMED: {
+        OrderStatus.CUTTING,
+        OrderStatus.SEWING,
+        OrderStatus.CANCELLED,
+    },
+    OrderStatus.CUTTING: {
+        OrderStatus.SEWING,
+        OrderStatus.FITTING,
+        OrderStatus.FINISHING,
+        OrderStatus.CANCELLED,
+    },
+    OrderStatus.SEWING: {
+        OrderStatus.FITTING,
+        OrderStatus.FINISHING,
+        OrderStatus.READY,
+        OrderStatus.CANCELLED,
+    },
+    OrderStatus.FITTING: {
+        OrderStatus.SEWING,
+        OrderStatus.FINISHING,
+        OrderStatus.READY,
+        OrderStatus.CANCELLED,
+    },
     OrderStatus.FINISHING: {OrderStatus.READY, OrderStatus.CANCELLED},
     OrderStatus.READY: {OrderStatus.DELIVERED, OrderStatus.FINISHING, OrderStatus.CANCELLED},
     OrderStatus.DELIVERED: set(),
@@ -53,6 +99,21 @@ def calculate_overdue(order: Order, today: date) -> tuple[bool, int]:
     if order.status in TERMINAL_STATUSES or order.due_date >= today:
         return False, 0
     return True, (today - order.due_date).days
+
+
+def installment_status(amount: Decimal, paid: Decimal, due_date: date, business: Business) -> str:
+    outstanding = max(amount - paid, Decimal("0.00"))
+    if outstanding == 0:
+        return "PAID"
+    if due_date < business_today(business):
+        return "OVERDUE"
+    if paid > 0:
+        return "PARTIALLY_PAID"
+    return "UNPAID"
+
+
+def allocation_total(allocations: list[PaymentAllocation]) -> Decimal:
+    return sum((allocation.amount for allocation in allocations), Decimal("0.00"))
 
 
 def user_name(user: User | None) -> str:
@@ -124,12 +185,18 @@ async def create_order(
     business: Business,
     current_user: User,
     payload: OrderCreate,
+    request=None,
 ) -> Order:
     customer = await get_customer(session, business, payload.customer_id)
     if customer.archived_at is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Archived customers cannot receive new orders.",
+        )
+    if payload.delivery_charge > 0 and not business.delivery_charges_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Delivery charges are disabled for this business.",
         )
     profiles: dict[uuid.UUID, MeasurementProfile] = {}
     for item in payload.items:
@@ -146,7 +213,9 @@ async def create_order(
         order_date=payload.order_date,
         due_date=payload.due_date,
         notes=payload.notes,
+        reference_image=payload.reference_image,
         discount_amount=payload.discount_amount,
+        delivery_charge=payload.delivery_charge,
         created_by=current_user.id,
     )
     for index, item in enumerate(payload.items, start=1):
@@ -163,6 +232,29 @@ async def create_order(
                 position=item.position or index,
             )
         )
+    if payload.payment_plan is not None and "installment_plans" not in (business.enabled_features or []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Installment plans are not enabled for this business.",
+        )
+    order_total = sum((item.unit_price * item.quantity for item in payload.items), Decimal("0.00")) - payload.discount_amount + payload.delivery_charge
+    if payload.initial_payment_amount is not None and payload.initial_payment_amount > order_total:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Initial payment cannot exceed the order total.")
+    if payload.payment_plan is not None:
+        order.payment_plan = PaymentInstallmentPlan(
+            business_id=business.id,
+            advance_amount=payload.payment_plan.advance_amount,
+            advance_due_date=(payload.order_date if payload.payment_plan.advance_amount else None),
+            installments=[
+                PaymentInstallment(
+                    amount=entry.amount,
+                    due_date=entry.due_date,
+                    position=index,
+                    label=entry.label.strip(),
+                )
+                for index, entry in enumerate(payload.payment_plan.installments, start=1)
+            ],
+        )
     order.status_history.append(
         OrderStatusHistory(
             previous_status=None,
@@ -172,8 +264,29 @@ async def create_order(
             changed_at=datetime.now(UTC),
         )
     )
+    add_business_audit(session, business, current_user, "ORDER_CREATED", f"Created order {order.order_number}", request, {"order_id": str(order.id)})
     session.add(order)
     try:
+        if payload.fulfillment is not None:
+            if payload.fulfillment.delivery_charge not in (None, order.delivery_charge):
+                raise HTTPException(status_code=422, detail="Fulfillment delivery charge must match the order charge.")
+            from app.services.fulfillment_service import update_fulfillment
+            await update_fulfillment(session, business, current_user, order.id, payload.fulfillment)
+        if payload.initial_payment_amount is not None:
+            initial_payment = Payment(
+                business_id=business.id,
+                customer_id=customer.id,
+                amount=payload.initial_payment_amount,
+                payment_method=payload.initial_payment_method,
+                status=PaymentStatus.SUCCESSFUL,
+                received_by=current_user.id,
+                paid_at=datetime.now(UTC),
+                notes="Initial payment recorded when order was created.",
+            )
+            order.payments.append(initial_payment)
+            if order.payment_plan is not None and "installment_plans" in (business.enabled_features or []):
+                await session.flush()
+                allocate_payment_to_plan(session, initial_payment, order.payment_plan)
         await session.commit()
     except Exception:
         await session.rollback()
@@ -270,6 +383,12 @@ async def get_order(session: AsyncSession, business: Business, order_id: uuid.UU
             selectinload(Order.status_history).selectinload(OrderStatusHistory.changed_by_user),
             selectinload(Order.payments).selectinload(Payment.received_by_user),
             selectinload(Order.invoice),
+            selectinload(Order.payment_plan).selectinload(PaymentInstallmentPlan.installments)
+            .selectinload(PaymentInstallment.allocations),
+            selectinload(Order.payment_plan).selectinload(PaymentInstallmentPlan.allocations),
+            selectinload(Order.fulfillment)
+            .selectinload(OrderFulfillment.events)
+            .selectinload(OrderFulfillmentEvent.actor),
         )
         .where(Order.business_id == business.id, Order.id == order_id)
     )
@@ -286,6 +405,8 @@ async def update_order(
     business: Business,
     order_id: uuid.UUID,
     payload: OrderUpdate,
+    current_user: User | None = None,
+    request=None,
 ) -> Order:
     order = await get_order(session, business, order_id)
     if order.status in TERMINAL_STATUSES:
@@ -294,6 +415,25 @@ async def update_order(
             detail="Delivered and cancelled orders cannot be edited.",
         )
     updates = payload.model_dump(exclude_unset=True)
+    if "customer_id" in updates and updates["customer_id"] is not None and updates["customer_id"] != order.customer_id:
+        customer = await get_customer(session, business, updates["customer_id"])
+        if customer.archived_at is not None:
+            raise HTTPException(status_code=409, detail="Archived customers cannot receive orders.")
+        if order.payments:
+            raise HTTPException(status_code=409, detail="Customer cannot be changed after payments are recorded.")
+        order.customer_id = customer.id
+    if "order_date" in updates and updates["order_date"] is not None:
+        order.order_date = updates["order_date"]
+    if order.due_date < order.order_date:
+        raise HTTPException(status_code=422, detail="Due date cannot be before the order date.")
+    if order.payment_plan is not None and (
+        ("items" in updates and updates["items"] is not None)
+        or ("discount_amount" in updates and updates["discount_amount"] is not None)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Revise or remove the installment plan before changing order pricing.",
+        )
     if "due_date" in updates and updates["due_date"] is not None:
         if updates["due_date"] < order.order_date:
             raise HTTPException(
@@ -303,8 +443,13 @@ async def update_order(
         order.due_date = updates["due_date"]
     if "notes" in updates:
         order.notes = updates["notes"]
+    if "reference_image" in updates:
+        order.reference_image = updates["reference_image"]
     if "items" in updates and updates["items"] is not None:
         items_by_id = {item.id: item for item in order.items}
+        submitted_ids = {entry.id for entry in payload.items or []}
+        if submitted_ids != set(items_by_id):
+            raise HTTPException(status_code=422, detail="All existing order items must be included; items cannot be added or removed during edit.")
         for item_update in payload.items or []:
             item = items_by_id.get(item_update.id)
             if item is None:
@@ -312,7 +457,24 @@ async def update_order(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="Order item does not belong to this order.",
                 )
+            item.garment_type = item_update.garment_type or item.garment_type
+            item.description = item_update.description
+            item.quantity = item_update.quantity or item.quantity
             item.unit_price = item_update.unit_price
+            item.style_reference_url = item_update.style_reference_url
+            item.notes = item_update.notes
+            item.position = item_update.position or item.position
+            if item_update.measurement_profile_id is not None:
+                await validate_measurement_profile(
+                    session, business, order.customer_id, item_update.measurement_profile_id
+                )
+            item.measurement_profile_id = item_update.measurement_profile_id
+    if "delivery_charge" in updates and updates["delivery_charge"] is not None:
+        if updates["delivery_charge"] > 0 and not business.delivery_charges_enabled:
+            raise HTTPException(status_code=422, detail="Delivery charges are disabled for this business.")
+        if order.payment_plan is not None or order.payments:
+            raise HTTPException(status_code=409, detail="Delivery charge cannot change after a payment plan or payment exists.")
+        order.delivery_charge = updates["delivery_charge"]
     if "discount_amount" in updates and updates["discount_amount"] is not None:
         order.discount_amount = updates["discount_amount"]
     if order.discount_amount > calculate_order_subtotal(order):
@@ -320,8 +482,19 @@ async def update_order(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Discount amount cannot exceed the order subtotal.",
         )
+    if calculate_successful_payments(order) > calculate_order_total(order):
+        raise HTTPException(status_code=409, detail="Edited order total cannot be less than the payments already recorded.")
+    if updates.get("fulfillment") is not None:
+        fulfillment_payload = updates["fulfillment"]
+        from app.services.fulfillment_service import update_fulfillment
+        actor = current_user or order.created_by_user
+        if actor is None:
+            raise HTTPException(status_code=409, detail="Order editor could not be identified.")
+        await update_fulfillment(session, business, actor, order.id, fulfillment_payload)
     if order.invoice is not None:
         order.invoice.status = calculate_invoice_status(order)
+    if current_user:
+        add_business_audit(session, business, current_user, "ORDER_UPDATED", f"Updated order {order.order_number}", request, {"order_id": str(order.id), "fields": sorted(updates)})
     await session.commit()
     return await get_order(session, business, order_id)
 
@@ -332,13 +505,37 @@ async def update_order_status(
     current_user: User,
     order_id: uuid.UUID,
     payload: OrderStatusUpdate,
+    request=None,
 ) -> Order:
     order = await get_order(session, business, order_id)
-    allowed = ORDER_TRANSITIONS[order.status]
+    configured = business.order_status_configuration or {}
+    configured_transitions = configured.get("transitions", {})
+    allowed_values = configured_transitions.get(order.status.value, ORDER_TRANSITIONS[order.status])
+    allowed_values = list(allowed_values)
+    if OrderStatus.CANCELLED in ORDER_TRANSITIONS[order.status] and OrderStatus.CANCELLED.value not in allowed_values:
+        allowed_values.append(OrderStatus.CANCELLED.value)
+    allowed = {OrderStatus(value) for value in allowed_values}
+    if payload.status in {OrderStatus.DELIVERED, OrderStatus.CANCELLED} and payload.status not in ORDER_TRANSITIONS[order.status]:
+        raise HTTPException(status_code=422, detail="This terminal status is not allowed from the current status.")
     if payload.status not in allowed:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Cannot transition order from {order.status} to {payload.status}.",
+        )
+    if payload.status == OrderStatus.DELIVERED and (
+        order.fulfillment is None or order.fulfillment.status != FulfillmentStatus.COMPLETED
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Record pickup or delivery handoff before marking this order delivered.",
+        )
+    if payload.status == OrderStatus.CANCELLED and (
+        order.fulfillment is not None
+        and order.fulfillment.status == FulfillmentStatus.OUT_FOR_DELIVERY
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An order cannot be cancelled while it is out for delivery.",
         )
     previous_status = order.status
     order.status = payload.status
@@ -358,6 +555,7 @@ async def update_order_status(
             changed_at=now,
         )
     )
+    add_business_audit(session, business, current_user, "ORDER_STATUS_UPDATED", f"Changed {order.order_number} to {payload.status.value}", request, {"order_id": str(order.id), "from": previous_status.value, "to": payload.status.value})
     await session.commit()
     return await get_order(session, business, order_id)
 
@@ -396,6 +594,66 @@ def order_response(order: Order, business: Business) -> OrderDetailResponse:
         if amount_paid > 0
         else FinancialStatus.UNPAID
     )
+    payment_plan_response = None
+    if order.payment_plan is not None:
+        plan = order.payment_plan
+        advance_paid = allocation_total(
+            [allocation for allocation in plan.allocations if allocation.is_advance]
+        )
+        advance_amount = plan.advance_amount or Decimal("0.00")
+        payment_plan_response = PaymentPlanResponse(
+            advance_amount=plan.advance_amount,
+            advance_due_date=plan.advance_due_date,
+            advance_paid_amount=advance_paid,
+            advance_outstanding_amount=max(advance_amount - advance_paid, Decimal("0.00")),
+            advance_status=(
+                installment_status(advance_amount, advance_paid, plan.advance_due_date, business)
+                if plan.advance_amount is not None and plan.advance_due_date is not None
+                else None
+            ),
+            installments=[
+                PaymentInstallmentResponse(
+                    id=entry.id,
+                    amount=entry.amount,
+                    due_date=entry.due_date,
+                    position=entry.position,
+                    label=entry.label,
+                    paid_amount=allocation_total(entry.allocations),
+                    outstanding_amount=max(entry.amount - allocation_total(entry.allocations), Decimal("0.00")),
+                    status=installment_status(
+                        entry.amount, allocation_total(entry.allocations), entry.due_date, business
+                    ),
+                )
+                for entry in plan.installments
+            ],
+        )
+    fulfillment_response = None
+    if order.fulfillment is not None:
+        fulfillment = order.fulfillment
+        fulfillment_response = FulfillmentResponse(
+            id=fulfillment.id,
+            method=fulfillment.method,
+            status=fulfillment.status,
+            recipient_name=fulfillment.recipient_name,
+            recipient_phone=fulfillment.recipient_phone,
+            delivery_address=fulfillment.delivery_address,
+            delivery_instructions=fulfillment.delivery_instructions,
+            tracking_reference=fulfillment.tracking_reference,
+            proof_of_delivery_url=fulfillment.proof_of_delivery_url,
+            dispatched_at=fulfillment.dispatched_at,
+            completed_at=fulfillment.completed_at,
+            events=[
+                FulfillmentEventResponse(
+                    id=event.id,
+                    event_type=event.event_type,
+                    actor_id=event.actor_id,
+                    actor_name=user_name(event.actor),
+                    notes=event.notes,
+                    occurred_at=event.occurred_at,
+                )
+                for event in fulfillment.events
+            ],
+        )
     return OrderDetailResponse(
         id=order.id,
         order_number=order.order_number,
@@ -409,6 +667,7 @@ def order_response(order: Order, business: Business) -> OrderDetailResponse:
         order_date=order.order_date,
         due_date=order.due_date,
         notes=order.notes,
+        reference_image=order.reference_image,
         created_by=order.created_by,
         created_by_name=user_name(order.created_by_user),
         delivered_at=order.delivered_at,
@@ -447,6 +706,7 @@ def order_response(order: Order, business: Business) -> OrderDetailResponse:
             for history in order.status_history
         ],
         discount_amount=order.discount_amount,
+        delivery_charge=order.delivery_charge,
         subtotal=subtotal,
         total=total,
         amount_paid=amount_paid,
@@ -454,4 +714,6 @@ def order_response(order: Order, business: Business) -> OrderDetailResponse:
         financial_status=financial_status,
         is_overdue=is_overdue,
         overdue_days=overdue_days,
+        payment_plan=payment_plan_response,
+        fulfillment=fulfillment_response,
     )

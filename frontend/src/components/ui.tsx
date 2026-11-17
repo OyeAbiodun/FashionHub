@@ -190,6 +190,7 @@ const statusTone: Record<string, string> = {
   PARTIALLY_PAID: "border-amber-200 bg-amber-50 text-amber-800",
   PAID: "border-emerald-200 bg-emerald-50 text-emerald-700",
   OVERDUE: "border-red-200 bg-red-50 text-red-700",
+  OUT_FOR_DELIVERY: "border-blue-200 bg-blue-50 text-blue-700",
   ARCHIVED: "border-stone-200 bg-stone-100 text-stone-700",
   HIGH: "border-red-200 bg-red-50 text-red-700",
   WARNING: "border-amber-200 bg-amber-50 text-amber-800",
@@ -342,14 +343,20 @@ export function MetricCard({
   value,
   subtext,
   icon: Icon,
+  onClick,
+  active = false,
+  ariaLabel,
 }: {
   label: string;
   value: string;
   subtext?: string;
   icon?: LucideIcon;
+  onClick?: () => void;
+  active?: boolean;
+  ariaLabel?: string;
 }) {
-  return (
-    <Card className="p-5">
+  const content = (
+    <>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider text-muted">
           {label}
@@ -362,8 +369,22 @@ export function MetricCard({
       </div>
       <div className="mt-2 text-2xl font-bold text-ink">{value}</div>
       {subtext ? <p className="mt-1 text-xs text-muted">{subtext}</p> : null}
-    </Card>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={ariaLabel ?? `${label}: ${value}. ${subtext ?? ""}`}
+        aria-pressed={active}
+        className={`w-full rounded-xl border bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${active ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <Card className="p-5">{content}</Card>;
 }
 
 export function Dialog({

@@ -154,18 +154,24 @@ export function CalendarPage() {
           value={deliveryCount.toString()}
           subtext={`Due in ${MONTH_NAMES[currentMonth - 1]}`}
           icon={ShoppingBag}
+          onClick={() => setSelectedFilter("ORDER_DUE")}
+          active={selectedFilter === "ORDER_DUE"}
         />
         <MetricCard
           label="Fitting Appointments"
           value={fittingCount.toString()}
           subtext="Garments ready for fitting"
           icon={Ruler}
+          onClick={() => setSelectedFilter("ORDER_FITTING")}
+          active={selectedFilter === "ORDER_FITTING"}
         />
         <MetricCard
           label="Task Deadlines"
           value={taskCount.toString()}
           subtext="Workroom staff assignments"
           icon={Clock}
+          onClick={() => setSelectedFilter("TASK_DUE")}
+          active={selectedFilter === "TASK_DUE"}
         />
       </div>
 

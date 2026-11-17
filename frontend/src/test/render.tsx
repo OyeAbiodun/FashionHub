@@ -28,6 +28,20 @@ export const session: AuthSession = {
     timezone: "Africa/Lagos",
     invoice_notes: null,
     invoice_footer: null,
+    enabled_features: [
+      "customers",
+      "measurements",
+      "templates",
+      "orders",
+      "invoices",
+      "reports",
+      "team",
+      "tasks",
+      "installment_plans",
+      "audit",
+      "inventory",
+      "communication",
+    ],
   },
 };
 

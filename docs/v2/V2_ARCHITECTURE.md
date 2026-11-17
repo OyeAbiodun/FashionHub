@@ -30,10 +30,10 @@ flowchart TB
 | Identity | User credentials, login/refresh/logout, identity activation, cookie/JWT mechanics. | Business role, active-workspace authorization, domain permissions. |
 | Tenant & Membership | Business, business settings, memberships, invitations, active-workspace validation, roles and permission policy. | Passwords or operational records. |
 | CRM | Customers, measurement templates/profiles/values, archive rules, customer contact data. | Order lifecycle, outbound delivery providers. |
-| Orders | Order intake, items, numbering, pricing inputs, customer/order associations, commercial lifecycle and delivery/cancellation. | Item-level shop-floor activity or stock ledger. |
+| Orders | Order intake, items, numbering, pricing inputs, customer/order associations, commercial lifecycle, fulfillment method and delivery/handoff history. | Item-level shop-floor activity or stock ledger. |
 | Production | Production work items, item stages, priorities, effective due dates, internal activity/notes, later assignments. | Order prices, customer mutation, membership creation. |
 | Inventory | Materials, suppliers, stock movements, order-material allocation/usage. | Garment/order fields or silent quantity overwrites. |
-| Finance | Payments, invoice issuance/status, balances and Decimal-safe calculations. | Subscription billing provider state. |
+| Finance | Payments, invoice issuance/status, installment schedules, balances and Decimal-safe calculations. | Subscription billing provider state. |
 | Communication | Templates, outbound communications, channel/status tracking, reminder orchestration and provider adapters. | Customer/order source-of-truth data or provider-specific fields in CRM. |
 | Customer Experience | Revocable portal access and explicitly customer-safe projections. | Internal notes, unrestricted operational models, authentication by internal UUID. |
 | Reporting | Bounded tenant-scoped read queries/aggregates over stable module contracts. | Operational writes, warehouse/streaming infrastructure. |
@@ -129,7 +129,11 @@ Initial concepts are `InventoryItem`, `Supplier`, immutable `StockMovement`, and
 
 ### Communication
 
-`MessageTemplate`, `Communication`, `CommunicationChannel`, and `CommunicationStatus` belong to Communication. Channels may include WhatsApp, SMS, and email, but providers sit behind replaceable adapters. V2.3 may begin with an auditable WhatsApp handoff/deep-link rather than automated sending.
+`MessageTemplate`, `Communication`, `CommunicationChannel`, and `CommunicationStatus` belong to Communication. Channels may include WhatsApp, SMS, and email, but providers sit behind replaceable adapters. V2.6 may begin with an auditable WhatsApp handoff/deep-link rather than automated sending.
+
+### Installment plans and outfit fulfillment
+
+V2.3 adds planned installment schedules over the existing Finance payment ledger; successful payment rows remain the authority for collections and balances. The business policy defaults to optional, and the owner may require plans for new orders. V2.4 records the chosen pickup/delivery method and order-level handoff history. The initial delivery slice does not include courier integrations or partial-garment fulfillment.
 
 ### Customer portal
 
@@ -181,4 +185,4 @@ Each record is tenant scoped, timestamped, actor-attributed when initiated by a 
 
 ## V2 non-goals
 
-Unless validated and scheduled later, V2 excludes native mobile apps, a marketplace, payroll, full accounting, a logistics network, supplier marketplace, e-commerce storefront, microservices, event streaming, Kubernetes, a complex workflow builder, a custom permission editor, and a full CRM marketing suite. AI remains experimental and is not part of the locked V2.1–V2.8 roadmap.
+Unless validated and scheduled later, V2 excludes native mobile apps, a marketplace, payroll, full accounting, a logistics network, supplier marketplace, e-commerce storefront, microservices, event streaming, Kubernetes, a complex workflow builder, a custom permission editor, and a full CRM marketing suite. AI remains experimental and is not part of the locked V2.1–V2.10 roadmap.

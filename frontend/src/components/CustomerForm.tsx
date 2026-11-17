@@ -31,7 +31,7 @@ const customerFormSchema = z.object({
     .max(40),
   alternate_phone: z.string().max(40).optional(),
   email: optionalEmail,
-  gender: z.string().max(40).optional(),
+  gender: z.enum(["MALE", "FEMALE"]).optional().or(z.literal("")),
   birthday: z.string().optional(),
   address: z.string().max(500).optional(),
   notes: z.string().max(5000).optional(),
@@ -120,11 +120,15 @@ export function CustomerForm({
             error={errors.email?.message}
             {...register("email")}
           />
-          <TextField
-            label="Gender optional"
-            error={errors.gender?.message}
-            {...register("gender")}
-          />
+          <label className="block">
+            <span className="text-sm font-medium text-ink">Gender optional</span>
+            <select className="mt-2 h-11 w-full rounded-lg border border-border bg-white px-3 text-ink shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" {...register("gender")}>
+              <option value="">Not specified</option>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+            </select>
+            {errors.gender?.message ? <span className="mt-1 block text-sm text-danger">{errors.gender.message}</span> : null}
+          </label>
           <TextField
             label="Birthday optional"
             type="date"
@@ -225,7 +229,7 @@ function toFormValues(customer?: Customer): CustomerFormValues {
     phone: customer?.phone ?? "",
     alternate_phone: customer?.alternate_phone ?? "",
     email: customer?.email ?? "",
-    gender: customer?.gender ?? "",
+    gender: customer?.gender?.toUpperCase() === "MALE" ? "MALE" : customer?.gender?.toUpperCase() === "FEMALE" ? "FEMALE" : "",
     birthday: customer?.birthday ?? "",
     address: customer?.address ?? "",
     notes: customer?.notes ?? "",

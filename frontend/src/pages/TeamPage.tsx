@@ -4,6 +4,7 @@ import {
   Loader2,
   Plus,
   Power,
+  RefreshCw,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -24,7 +25,10 @@ import {
 } from "../api/roles";
 import {
   addStaffMember,
+  fetchTeamInvitations,
   fetchTeamMembers,
+  resendTeamInvitation,
+  revokeTeamInvitation,
   updateStaffMember,
 } from "../api/team";
 import { getApiErrorMessage } from "../api/client";
@@ -46,6 +50,7 @@ import {
   selectStyles,
 } from "../components/ui";
 import { useAuth } from "../hooks/useAuth";
+import { formatDate } from "../lib/date";
 
 const ALL_PERMISSIONS = [
   { key: "customers:read", label: "View Customers" },
@@ -56,6 +61,10 @@ const ALL_PERMISSIONS = [
   { key: "orders:write", label: "Create & Manage Orders" },
   { key: "tasks:read", label: "View Tasks" },
   { key: "tasks:write", label: "Assign & Manage Tasks" },
+  { key: "inventory:read", label: "View Inventory" },
+  { key: "inventory:write", label: "Receive & Adjust Stock" },
+  { key: "communication:read", label: "View Communication History" },
+  { key: "communication:write", label: "Prepare Customer Messages" },
   { key: "invoices:read", label: "View Invoices & Payments" },
   { key: "invoices:write", label: "Generate Invoices & Payments" },
   { key: "reports:read", label: "View Financial Reports" },
@@ -66,7 +75,6 @@ const staffSchema = z.object({
   last_name: z.string().trim().min(1, "Last name is required").max(100),
   email: z.string().email("Enter a valid email address"),
   phone: z.string().trim().max(40).optional().or(z.literal("")),
-  password: z.string().min(8, "Password must be at least 8 characters").max(128),
   role: z.enum(["BUSINESS_ADMIN", "STAFF"]),
 });
 
@@ -103,6 +111,10 @@ export function TeamPage() {
     queryKey: ["team"],
     queryFn: fetchTeamMembers,
   });
+  const invitationsQuery = useQuery({
+    queryKey: ["team", "invitations"],
+    queryFn: fetchTeamInvitations,
+  });
 
   const rolesQuery = useQuery({
     queryKey: ["roles"],
@@ -116,7 +128,6 @@ export function TeamPage() {
       last_name: "",
       email: "",
       phone: "",
-      password: "",
       role: "STAFF",
     },
   });
@@ -125,6 +136,7 @@ export function TeamPage() {
     mutationFn: addStaffMember,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["team"] });
+      void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] });
       setFormSuccess(true);
       setTimeout(() => {
         setAddModalOpen(false);
@@ -135,6 +147,15 @@ export function TeamPage() {
     onError: (err) => {
       setFormApiError(getApiErrorMessage(err));
     },
+  });
+
+  const revokeInvitationMutation = useMutation({
+    mutationFn: revokeTeamInvitation,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] }),
+  });
+  const resendInvitationMutation = useMutation({
+    mutationFn: resendTeamInvitation,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] }),
   });
 
   const toggleActiveMutation = useMutation({
@@ -169,6 +190,7 @@ export function TeamPage() {
   });
 
   const teamMembers = teamQuery.data ?? [];
+  const invitations = invitationsQuery.data ?? [];
   const roles = rolesQuery.data ?? [];
   const customRoles = roles.filter((r) => !r.is_system_role);
 
@@ -210,7 +232,7 @@ export function TeamPage() {
       <PageHeader
         eyebrow="Organization"
         title="Team & Dynamic Role Management"
-        description="Invite staff members, assign dynamic roles (Master Cutter, Senior Tailor, Sales), and manage granular permission presets."
+        description="Invite staff by email, assign workspace roles and permissions, and manage team access. Invitees set their own password using a secure, expiring link."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -236,7 +258,7 @@ export function TeamPage() {
               }}
             >
               <UserPlus className="h-4 w-4" />
-              Add Staff Member
+              Invite Staff
             </Button>
           </div>
         }
@@ -249,24 +271,40 @@ export function TeamPage() {
           value={teamMembers.length.toString()}
           subtext={`${activeCount} active accounts`}
           icon={Users}
+          onClick={() => document.getElementById("team-members-list")?.scrollIntoView({ behavior: "smooth", block: "start" })}
         />
         <MetricCard
           label="Staff Account Limit"
           value={`${teamMembers.length} / ${maxAllowed}`}
           subtext={isLimitReached ? "Limit reached (Upgrade required)" : "Accounts available"}
           icon={isLimitReached ? ShieldAlert : UserCheck}
+          onClick={() => { if (!isLimitReached) setAddModalOpen(true); else document.getElementById("team-members-list")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
         />
         <MetricCard
           label="Dynamic Roles Configured"
           value={customRoles.length.toString()}
           subtext="Custom workspace roles"
           icon={ShieldCheck}
+          onClick={() => document.getElementById("custom-roles-list")?.scrollIntoView({ behavior: "smooth", block: "start" })}
         />
       </div>
 
+      <Card className="mt-6 p-5 sm:p-7">
+        <SectionHeader
+          title="Team Invitations"
+          description="Pending invitations expire after 48 hours. Each link can be used once to create the staff member’s password."
+        />
+        {invitationsQuery.isError ? <div className="mt-4"><InlineError message="Invitations could not be loaded." retry={() => void invitationsQuery.refetch()} /></div> : null}
+        {invitationsQuery.isLoading ? <p className="mt-4 text-sm text-muted">Loading invitations…</p> : null}
+        {!invitationsQuery.isLoading && invitations.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-border p-4 text-sm text-muted">No team invitations have been sent.</p> : null}
+        {invitations.length > 0 ? <ul className="mt-4 divide-y divide-border">{invitations.map((invitation) => <li key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-medium text-ink">{invitation.first_name} {invitation.last_name} <span className="font-normal text-muted">· {invitation.email}</span></p><p className="mt-1 text-xs text-muted">{invitation.role.replace("_", " ")} · {invitation.status === "PENDING" ? `Expires ${formatDate(invitation.expires_at, business?.timezone)}` : invitation.status.toLowerCase()}</p></div><div className="flex items-center gap-2"><StatusBadge status={invitation.status} label={invitation.status} />{invitation.status === "PENDING" ? <><Button type="button" variant="outline" size="sm" disabled={resendInvitationMutation.isPending} onClick={() => resendInvitationMutation.mutate(invitation.id)}><RefreshCw className="h-3.5 w-3.5" />Resend</Button><Button type="button" variant="outline" size="sm" disabled={revokeInvitationMutation.isPending} onClick={() => revokeInvitationMutation.mutate(invitation.id)}>Revoke</Button></> : null}</div></li>)}</ul> : null}
+        {revokeInvitationMutation.isError ? <div className="mt-3"><InlineError message={getApiErrorMessage(revokeInvitationMutation.error)} /></div> : null}
+        {resendInvitationMutation.isError ? <div className="mt-3"><InlineError message={getApiErrorMessage(resendInvitationMutation.error)} /></div> : null}
+      </Card>
+
       {/* Dynamic Roles Cards Summary */}
       {customRoles.length > 0 ? (
-        <div className="mt-6">
+        <div id="custom-roles-list" className="mt-6 scroll-mt-6">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">
             Custom Workspace Roles
           </h3>
@@ -307,7 +345,7 @@ export function TeamPage() {
       ) : null}
 
       {/* Staff Directory */}
-      <div className="mt-8">
+      <div id="team-members-list" className="mt-8 scroll-mt-6">
         <Card className="p-5 sm:p-7">
           <SectionHeader
             title="Team Members Directory"
@@ -412,7 +450,7 @@ export function TeamPage() {
 
       {/* Add Staff Modal */}
       {addModalOpen ? (
-        <Dialog title="Add Staff Member" onClose={() => setAddModalOpen(false)}>
+        <Dialog title="Invite Staff Member" onClose={() => setAddModalOpen(false)}>
           <form className="space-y-4" onSubmit={staffForm.handleSubmit(onAddSubmit)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
@@ -450,20 +488,9 @@ export function TeamPage() {
                 <input className={inputStyles} {...staffForm.register("phone")} />
               </label>
 
-              <label className="block">
-                <span className={labelStyles}>Temporary Password</span>
-                <input
-                  className={inputStyles}
-                  type="password"
-                  {...staffForm.register("password")}
-                />
-                {staffForm.formState.errors.password ? (
-                  <span className={errorTextStyles}>
-                    {staffForm.formState.errors.password.message}
-                  </span>
-                ) : null}
-              </label>
             </div>
+
+            <p className="rounded-lg border border-primary/20 bg-primary-soft/40 p-3 text-sm leading-5 text-muted">FashionOS emails a secure invitation link to this address. The staff member sets their password privately; it is never visible to you.</p>
 
             <label className="block">
               <span className={labelStyles}>Account Role</span>
@@ -523,19 +550,19 @@ export function TeamPage() {
             ) : null}
 
             {formApiError ? <InlineError message={formApiError} /> : null}
-            {formSuccess ? <SuccessNotice>Staff member added successfully.</SuccessNotice> : null}
+            {formSuccess ? <SuccessNotice>Invitation email sent successfully.</SuccessNotice> : null}
 
             <div className="flex justify-end gap-3 pt-3 border-t border-border">
               <Button variant="outline" type="button" onClick={() => setAddModalOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={staffForm.formState.isSubmitting}>
-                {staffForm.formState.isSubmitting ? (
+              <Button type="submit" disabled={addStaffMutation.isPending}>
+                {addStaffMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <UserPlus className="h-4 w-4" />
                 )}
-                Add Staff Member
+                Send Invitation
               </Button>
             </div>
           </form>

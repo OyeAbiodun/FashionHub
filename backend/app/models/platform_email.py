@@ -43,5 +43,7 @@ class PlatformEmailConfiguration(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     from_email: Mapped[str] = mapped_column(String(320), nullable=False)
     from_name: Mapped[str] = mapped_column(String(200), nullable=False, default="FashionOS")
+    support_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    support_whatsapp: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_test_status: Mapped[str | None] = mapped_column(String(20), nullable=True)

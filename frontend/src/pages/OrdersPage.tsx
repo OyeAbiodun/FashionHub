@@ -192,6 +192,7 @@ export function OrdersPage() {
                   <OrderTableRow
                     order={order}
                     currency={currency}
+                    statusLabel={business?.order_status_configuration?.labels?.[order.status] ?? formatStatus(order.status)}
                     key={order.id}
                   />
                 ))}
@@ -203,6 +204,7 @@ export function OrdersPage() {
               <OrderMobileCard
                 order={order}
                 currency={currency}
+                statusLabel={business?.order_status_configuration?.labels?.[order.status] ?? formatStatus(order.status)}
                 key={order.id}
               />
             ))}
@@ -240,9 +242,11 @@ export function OrdersPage() {
 function OrderTableRow({
   order,
   currency,
+  statusLabel,
 }: {
   order: OrderListItem;
   currency: string;
+  statusLabel: string;
 }) {
   return (
     <tr className="group hover:bg-stone-50/70">
@@ -270,7 +274,7 @@ function OrderTableRow({
         </p>
       </td>
       <td className="px-5 py-4">
-        <StatusBadge status={order.status} />
+        <StatusBadge status={order.status} label={statusLabel} />
       </td>
       <td className="px-5 py-4">
         <p
@@ -304,9 +308,11 @@ function OrderTableRow({
 function OrderMobileCard({
   order,
   currency,
+  statusLabel,
 }: {
   order: OrderListItem;
   currency: string;
+  statusLabel: string;
 }) {
   return (
     <Link className="block p-4" to={`/orders/${order.id}`}>
@@ -315,7 +321,7 @@ function OrderMobileCard({
           <p className="font-semibold text-ink">{order.order_number}</p>
           <p className="mt-1 text-sm text-muted">{order.customer_name}</p>
         </div>
-        <StatusBadge status={order.status} />
+        <StatusBadge status={order.status} label={statusLabel} />
       </div>
       <p className="mt-3 text-sm text-ink">
         {order.garment_summary} · {order.item_count} item

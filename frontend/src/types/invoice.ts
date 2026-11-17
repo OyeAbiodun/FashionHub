@@ -14,6 +14,7 @@ export interface InvoiceItem {
 export interface InvoiceFinancialSummary {
   subtotal: string;
   discount_amount: string;
+  delivery_charge?: string;
   total: string;
   amount_paid: string;
   outstanding_balance: string;

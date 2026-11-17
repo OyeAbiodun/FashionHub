@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   fetchAdminBusinesses,
@@ -22,6 +23,8 @@ import {
   fetchPlatformActivity,
   fetchPlatformEmailConfiguration,
   fetchPlatformMetrics,
+  fetchPlatformAuditConfiguration,
+  updatePlatformAuditConfiguration,
   sendPlatformEmailTest,
   toggleBusinessActive,
   updateBusinessEntitlements,
@@ -31,6 +34,7 @@ import {
   type SmtpSecurityMode,
 } from "../api/admin";
 import { getApiErrorMessage } from "../api/client";
+import { SubscriptionSettingsPanel } from "../components/admin/SubscriptionSettingsPanel";
 import {
   Button,
   Card,
@@ -56,6 +60,10 @@ const ALL_MODULES = [
   { key: "reports", label: "Financial Reports & Dashboard" },
   { key: "team", label: "Team & Staff Management" },
   { key: "tasks", label: "Tasks & Work Assignments" },
+  { key: "installment_plans", label: "Installment Payment Plans" },
+  { key: "audit", label: "Business Audit Log" },
+  { key: "inventory", label: "Inventory & Materials" },
+  { key: "communication", label: "Customer Communication & Reminders" },
 ];
 
 const EMAIL_PRESETS: Record<
@@ -77,12 +85,18 @@ const defaultEmailForm = {
   security_mode: "STARTTLS" as SmtpSecurityMode,
   from_email: "",
   from_name: "FashionOS",
+  support_email: "",
+  support_whatsapp: "",
 };
 
 export function SuperAdminPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<"overview" | "businesses" | "activity" | "audit" | "subscriptions" | "settings">("overview");
+  const [tenantSort, setTenantSort] = useState<"created" | "users" | "orders" | "revenue">("created");
   const [editingBusiness, setEditingBusiness] = useState<BusinessTenantDetail | null>(null);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [maxStaff, setMaxStaff] = useState(10);
@@ -93,11 +107,18 @@ export function SuperAdminPage() {
   const [testRecipient, setTestRecipient] = useState("");
   const [emailError, setEmailError] = useState("");
   const [emailSuccess, setEmailSuccess] = useState("");
+  const [auditConfig, setAuditConfig] = useState({ enabled: true, capture_ip: true, capture_device: true, capture_details: true });
+  const [auditSaveMessage, setAuditSaveMessage] = useState("");
 
   const metricsQuery = useQuery({
     queryKey: ["admin", "metrics"],
     queryFn: fetchPlatformMetrics,
   });
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "settings" || tab === "subscriptions" || tab === "businesses" || tab === "activity" || tab === "audit" || tab === "overview") setActiveTab(tab);
+  }, [searchParams]);
 
   const businessesQuery = useQuery({
     queryKey: ["admin", "businesses", search],
@@ -113,6 +134,9 @@ export function SuperAdminPage() {
     queryKey: ["admin", "audit"],
     queryFn: () => fetchAdminAudit({ limit: 30 }),
   });
+
+  const auditConfigurationQuery = useQuery({ queryKey: ["admin", "audit-configuration"], queryFn: fetchPlatformAuditConfiguration });
+  useEffect(() => { if (auditConfigurationQuery.data) setAuditConfig(auditConfigurationQuery.data); }, [auditConfigurationQuery.data]);
 
   const emailConfigurationQuery = useQuery({
     queryKey: ["platform", "email"],
@@ -132,6 +156,8 @@ export function SuperAdminPage() {
       security_mode: configuration.security_mode,
       from_email: configuration.from_email ?? "",
       from_name: configuration.from_name,
+      support_email: configuration.support_email ?? "",
+      support_whatsapp: configuration.support_whatsapp ?? "",
     });
   }, [emailConfigurationQuery.data]);
 
@@ -167,6 +193,8 @@ export function SuperAdminPage() {
         ...emailForm,
         smtp_username: emailForm.smtp_username || null,
         smtp_password: emailForm.smtp_password || null,
+        support_email: emailForm.support_email || null,
+        support_whatsapp: emailForm.support_whatsapp || null,
       }),
     onSuccess: () => {
       setEmailError("");
@@ -185,6 +213,11 @@ export function SuperAdminPage() {
       void queryClient.invalidateQueries({ queryKey: ["platform", "email"] });
     },
     onError: (error) => setEmailError(getApiErrorMessage(error)),
+  });
+
+  const saveAuditConfigurationMutation = useMutation({
+    mutationFn: () => updatePlatformAuditConfiguration(auditConfig),
+    onSuccess: (configuration) => { setAuditConfig(configuration); setAuditSaveMessage("Audit capture settings saved."); void queryClient.invalidateQueries({ queryKey: ["admin", "audit-configuration"] }); },
   });
 
   function openEditEntitlements(b: BusinessTenantDetail) {
@@ -232,6 +265,12 @@ export function SuperAdminPage() {
 
   const metrics = metricsQuery.data;
   const businesses = businessesQuery.data?.items ?? [];
+  const sortedBusinesses = [...businesses].sort((left, right) => {
+    if (tenantSort === "users") return right.user_count - left.user_count;
+    if (tenantSort === "orders") return right.order_count - left.order_count;
+    if (tenantSort === "revenue") return Number(right.total_revenue) - Number(left.total_revenue);
+    return Date.parse(right.created_at) - Date.parse(left.created_at);
+  });
   const activity = activityQuery.data ?? [];
 
   return (
@@ -240,37 +279,55 @@ export function SuperAdminPage() {
         eyebrow="Platform Backoffice"
         title="Super Admin Control Center"
         description="Oversee fashion business tenants, set module entitlements, configure staff limits, and manage platform health."
+        actions={<Button variant="outline" onClick={() => navigate("/admin/system")}><Activity className="h-4 w-4" />System status</Button>}
       />
 
+      <div className="mt-6 overflow-x-auto border-b border-border">
+        <div className="flex min-w-max gap-1" role="tablist" aria-label="Super Admin sections">
+          {([["overview", "Overview"], ["businesses", "Business Tenants"], ["activity", "System Activity"], ["audit", "Platform Audit"], ["subscriptions", "Subscriptions"], ["settings", "Platform Settings"]] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)} className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === key ? "border-primary text-primary" : "border-transparent text-muted hover:text-ink"}`}>{label}</button>)}
+        </div>
+      </div>
+
       {/* KPI Cards */}
-      <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {activeTab === "overview" ? <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label="Total Businesses"
           value={metrics ? metrics.total_businesses.toString() : "..."}
           subtext={`${metrics?.active_businesses ?? 0} active tenants`}
           icon={Building2}
+          onClick={() => { setTenantSort("created"); setActiveTab("businesses"); }}
         />
         <MetricCard
           label="Total Users"
           value={metrics ? metrics.total_users.toString() : "..."}
           subtext="Registered platform accounts"
           icon={Users}
+          onClick={() => { setTenantSort("users"); setActiveTab("businesses"); }}
         />
         <MetricCard
           label="Total Orders"
           value={metrics ? metrics.total_orders.toString() : "..."}
           subtext="Orders processed platform-wide"
           icon={CheckCircle2}
+          onClick={() => { setTenantSort("orders"); setActiveTab("businesses"); }}
         />
         <MetricCard
           label="Platform Revenue (GMV)"
           value={metrics ? (Object.keys(metrics.collected_by_currency).length ? Object.entries(metrics.collected_by_currency).map(([currency, amount]) => `${currency} ${amount}`).join(" · ") : "0.00") : "..."}
           subtext="Successful payments, grouped by business currency"
           icon={DollarSign}
+          onClick={() => { setTenantSort("revenue"); setActiveTab("businesses"); }}
         />
-      </div>
+      </div> : null}
 
-      <Card className="mt-8 p-5 sm:p-7">
+      {activeTab === "settings" ? <><Card className="mt-6 p-5 sm:p-7">
+        <SectionHeader title="Platform audit capture" description="Choose whether platform admin actions are recorded and which request details are retained." />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">{([ ["enabled", "Record platform admin actions"], ["capture_ip", "Capture source IP"], ["capture_device", "Capture device/browser details"], ["capture_details", "Capture change details"] ] as const).map(([key, label]) => <label className="flex items-center gap-3 text-sm" key={key}><input type="checkbox" checked={auditConfig[key]} onChange={(event) => setAuditConfig((current) => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}</div>
+        <div className="mt-4 flex items-center gap-3"><Button disabled={saveAuditConfigurationMutation.isPending} onClick={() => saveAuditConfigurationMutation.mutate()}>Save audit settings</Button>{auditSaveMessage ? <span className="text-sm text-emerald-700">{auditSaveMessage}</span> : null}</div>
+        {saveAuditConfigurationMutation.isError ? <div className="mt-3"><InlineError message={getApiErrorMessage(saveAuditConfigurationMutation.error)} /></div> : null}
+      </Card>
+
+      <Card className="mt-6 p-5 sm:p-7">
         <SectionHeader
           title="Platform Settings — Email Configuration"
           description="Configure the single FashionOS transactional email service used by every tenant. Gmail, Outlook, and Yahoo commonly require an app password or SMTP-specific credentials."
@@ -379,6 +436,14 @@ export function SuperAdminPage() {
               onChange={(event) => setEmailForm((current) => ({ ...current, from_name: event.target.value }))}
             />
           </label>
+          <label>
+            <span className={labelStyles}>FashionOS Support Email</span>
+            <input className={inputStyles} type="email" placeholder="support@example.com" value={emailForm.support_email} onChange={(event) => setEmailForm((current) => ({ ...current, support_email: event.target.value }))} />
+          </label>
+          <label>
+            <span className={labelStyles}>Support WhatsApp number</span>
+            <input className={inputStyles} type="tel" placeholder="+2348012345678" value={emailForm.support_whatsapp} onChange={(event) => setEmailForm((current) => ({ ...current, support_whatsapp: event.target.value }))} />
+          </label>
         </div>
         <p className="mt-3 text-xs text-muted">
           SMTP credentials are encrypted server-side and are never displayed after saving.
@@ -412,7 +477,9 @@ export function SuperAdminPage() {
       </Card>
 
       {/* Main Tenant Directory */}
-      <div className="mt-8 space-y-6">
+      </> : null}
+
+      {activeTab === "businesses" ? <div className="mt-6 space-y-6">
         <Card className="p-5 sm:p-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <SectionHeader
@@ -431,6 +498,11 @@ export function SuperAdminPage() {
             </div>
           </div>
 
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">{businessesQuery.data?.total ?? businesses.length} business tenants</p>
+            <label className="flex items-center gap-2 text-sm text-muted">Sort by<select className="h-9 rounded-lg border border-border bg-white px-2 text-sm text-ink" value={tenantSort} onChange={(event) => setTenantSort(event.target.value as typeof tenantSort)}><option value="created">Recently added</option><option value="users">User count</option><option value="orders">Order count</option><option value="revenue">Successful payments</option></select></label>
+          </div>
+
           <div className="mt-6 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border bg-slate-50 text-xs font-semibold uppercase text-slate-500">
@@ -444,7 +516,7 @@ export function SuperAdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {businesses.map((b) => (
+                {sortedBusinesses.map((b) => (
                   <tr key={b.id} className="hover:bg-slate-50/70">
                     <td className="px-4 py-3.5">
                       <div className="font-semibold text-ink">{b.name}</div>
@@ -479,6 +551,7 @@ export function SuperAdminPage() {
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button className={buttonStyles({ variant: "outline", size: "sm", className: "h-8 px-2.5 text-xs" })} type="button" onClick={() => navigate(`/admin/businesses/${b.id}`)}><Building2 className="mr-1 inline h-3.5 w-3.5" />Details</button>
                         <button
                           className={buttonStyles({
                             variant: "outline",
@@ -521,9 +594,12 @@ export function SuperAdminPage() {
             </table>
           </div>
         </Card>
+      </div> : null}
+
+        {activeTab === "subscriptions" ? <SubscriptionSettingsPanel /> : null}
 
         {/* Recent Activity Log */}
-        <Card className="p-5 sm:p-7">
+        {activeTab === "activity" ? <Card className="mt-6 p-5 sm:p-7">
           <SectionHeader
             title="System Activity Feed"
             description="Recent business registrations and platform operational events."
@@ -548,9 +624,9 @@ export function SuperAdminPage() {
               </div>
             ))}
           </div>
-        </Card>
+        </Card> : null}
 
-        <Card className="p-5 sm:p-7">
+        {activeTab === "audit" ? <Card className="mt-6 p-5 sm:p-7">
           <SectionHeader
             title="Platform Admin Audit Trail"
             description="Business status and entitlement changes with the administrator, time, and affected tenant."
@@ -561,7 +637,7 @@ export function SuperAdminPage() {
                 <div className="rounded-full bg-slate-100 p-2 text-slate-700"><ClipboardList className="h-4 w-4" aria-hidden="true" /></div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-ink">{entry.summary}</p>
-                  <p className="text-xs text-muted">{entry.actor_name} ({entry.actor_email}) · {entry.business_name ?? "Platform"} · {new Date(entry.timestamp).toLocaleString()}</p>
+                  <p className="text-xs text-muted">{entry.actor_name} ({entry.actor_email}) · {entry.business_name ?? "Platform"} · {new Date(entry.timestamp).toLocaleString()}{entry.source_ip ? ` · IP ${entry.source_ip}` : ""}{entry.user_agent ? ` · ${entry.user_agent}` : ""}</p>
                   <p className="mt-1 text-xs text-muted">{entry.action}</p>
                 </div>
               </div>
@@ -570,9 +646,9 @@ export function SuperAdminPage() {
             {!auditQuery.isLoading && (auditQuery.data ?? []).length === 0 ? <p className="text-sm text-muted">No platform admin changes recorded yet.</p> : null}
             {auditQuery.isError ? <InlineError message="Could not load platform admin audit history." /> : null}
           </div>
-        </Card>
-      </div>
+        </Card> : null}
 
+      {/* Edit Feature Entitlements Modal */}
       {/* Edit Feature Entitlements Modal */}
       {editingBusiness ? (
         <Dialog

@@ -9,14 +9,18 @@ from app.api.routes import (
     admin,
     auth,
     business,
+    communication,
     customers,
     dashboard,
     finances,
     health,
+    inventory,
     measurements,
     orders,
     platform,
+    reports,
     roles,
+    subscription,
     tasks,
     team,
 )
@@ -57,6 +61,7 @@ async def add_security_headers(request: Request, call_next: RequestResponseEndpo
     if (
         settings.app_env.lower() == "production"
         and request.method in UNSAFE_HTTP_METHODS
+        and not request.url.path.startswith(f"{settings.api_prefix}/webhooks/billing/")
         and request.headers.get("origin") != settings.frontend_origin
     ):
         response = JSONResponse(status_code=403, content={"detail": "Origin not allowed"})
@@ -73,9 +78,15 @@ app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 app.include_router(platform.router, prefix=settings.api_prefix)
+app.include_router(subscription.router, prefix=settings.api_prefix)
+app.include_router(subscription.webhook_router, prefix=settings.api_prefix)
+app.include_router(reports.router, prefix=settings.api_prefix)
 app.include_router(team.router, prefix=settings.api_prefix)
+app.include_router(team.public_invitation_router, prefix=settings.api_prefix)
 app.include_router(roles.router, prefix=settings.api_prefix)
 app.include_router(tasks.router, prefix=settings.api_prefix)
+app.include_router(inventory.router, prefix=settings.api_prefix)
+app.include_router(communication.router, prefix=settings.api_prefix)
 app.include_router(business.router, prefix=settings.api_prefix)
 app.include_router(customers.router, prefix=settings.api_prefix)
 app.include_router(measurements.router, prefix=settings.api_prefix)

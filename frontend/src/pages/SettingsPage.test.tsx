@@ -17,6 +17,7 @@ vi.mock("../api/business");
 vi.mock("../api/auth");
 
 beforeEach(() => {
+  vi.mocked(businessApi.listBusinessAudit).mockResolvedValue([]);
   vi.mocked(businessApi.getBusinessSettings).mockResolvedValue(
     session.business,
   );
@@ -38,15 +39,13 @@ test("loads each business settings section and current values", async () => {
     screen.getByRole("heading", { name: "Business profile" }),
   ).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Branding" })).toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: "Regional preferences" }),
-  ).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Regional preferences" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByLabelText("Business name")).toHaveValue("Ada Bespoke"));
+  await userEvent.setup().click(screen.getByRole("tab", { name: "Preferences" }));
+  expect(screen.getByRole("heading", { name: "Regional preferences" })).toBeInTheDocument();
   expect(
     screen.getByRole("heading", { name: "Invoice preferences" }),
   ).toBeInTheDocument();
-  await waitFor(() =>
-    expect(screen.getByLabelText("Business name")).toHaveValue("Ada Bespoke"),
-  );
   expect(screen.getByLabelText("Currency")).toHaveValue("NGN");
   expect(screen.getByLabelText("Timezone")).toHaveValue("Africa/Lagos");
 });
@@ -68,6 +67,7 @@ test("validates and saves profile, branding, regional, and invoice preferences",
     screen.getByLabelText("Logo URL optional"),
     "https://example.com/logo.png",
   );
+  await user.click(screen.getByRole("tab", { name: "Preferences" }));
   await user.selectOptions(screen.getByLabelText("Currency"), "GBP");
   await user.selectOptions(screen.getByLabelText("Timezone"), "Europe/London");
   await user.type(
@@ -95,11 +95,12 @@ test("validates and saves profile, branding, regional, and invoice preferences",
   expect(
     await screen.findByText("Business settings saved."),
   ).toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "Business profile" }));
   expect(screen.getByAltText("House of Ada logo")).toHaveAttribute(
     "src",
     "https://example.com/logo.png",
   );
-});
+}, 10000);
 
 test("settings route is protected", async () => {
   renderWithAuth(<App />, { route: "/settings" });

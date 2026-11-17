@@ -14,10 +14,17 @@ export interface Payment {
   received_by_name: string;
   paid_at: string;
   created_at: string;
+  allocations?: {
+    amount: string;
+    is_advance: boolean;
+    installment_id: string | null;
+    label: string;
+  }[];
 }
 
 export interface PaymentListItem extends Payment {
   order_number: string;
+  customer_name: string;
 }
 
 export interface PaymentListResponse {
@@ -34,4 +41,6 @@ export interface CreatePaymentInput {
   reference?: string | null;
   notes?: string | null;
   paid_at?: string | null;
+  installment_id?: string | null;
+  apply_automatically?: boolean;
 }

@@ -1,8 +1,16 @@
 import {
+  Activity,
   Calendar as CalendarIcon,
   CheckSquare,
   ChevronRight,
   ClipboardList,
+  CreditCard,
+  BarChart3,
+  ReceiptText,
+  Boxes,
+  MessageCircle,
+  CircleHelp,
+  ScrollText,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -71,6 +79,53 @@ const navItems: Array<{
     matches: (pathname) =>
       pathname.startsWith("/orders") || pathname.startsWith("/invoices"),
   },
+  {
+    to: "/payments",
+    label: "Payments",
+    icon: CreditCard,
+    featureKey: "invoices",
+    matches: (pathname) => pathname.startsWith("/payments"),
+  },
+  {
+    to: "/billing",
+    label: "Plan & Billing",
+    icon: ReceiptText,
+    matches: (pathname) => pathname.startsWith("/billing") || pathname.startsWith("/subscription"),
+  },
+  {
+    to: "/reports",
+    label: "Reports",
+    icon: BarChart3,
+    featureKey: "reports",
+    matches: (pathname) => pathname.startsWith("/reports"),
+  },
+  {
+    to: "/inventory",
+    label: "Inventory",
+    icon: Boxes,
+    featureKey: "inventory",
+    matches: (pathname) => pathname.startsWith("/inventory"),
+  },
+  {
+    to: "/communication",
+    label: "Communication",
+    icon: MessageCircle,
+    featureKey: "communication",
+    matches: (pathname) => pathname.startsWith("/communication"),
+  },
+  {
+    to: "/audit",
+    label: "Audit Log",
+    icon: ScrollText,
+    featureKey: "audit",
+    matches: (pathname) => pathname.startsWith("/audit"),
+  },
+  {
+    to: "/help",
+    label: "Help & Support",
+    icon: CircleHelp,
+    matches: (pathname) => pathname.startsWith("/help"),
+  },
 ];
 
 const teamNavItem = {
@@ -98,7 +153,21 @@ const adminNavItem = {
   to: "/admin",
   label: "Super Admin",
   icon: ShieldCheck,
-  matches: (pathname: string) => pathname.startsWith("/admin"),
+  matches: (pathname: string) => pathname === "/admin" || pathname.startsWith("/admin/businesses/"),
+};
+
+const platformAuditNavItem = {
+  to: "/admin/audit",
+  label: "Platform Audit",
+  icon: ScrollText,
+  matches: (pathname: string) => pathname.startsWith("/admin/audit"),
+};
+
+const systemStatusNavItem = {
+  to: "/admin/system",
+  label: "System Status",
+  icon: Activity,
+  matches: (pathname: string) => pathname.startsWith("/admin/system"),
 };
 
 function pageContext(pathname: string): string {
@@ -115,6 +184,13 @@ function pageContext(pathname: string): string {
   if (pathname.startsWith("/orders") || pathname.startsWith("/invoices")) {
     return "Orders";
   }
+  if (pathname.startsWith("/payments")) return "Payments";
+  if (pathname.startsWith("/billing") || pathname.startsWith("/subscription")) return "Plan & Billing";
+  if (pathname.startsWith("/reports")) return "Reports";
+  if (pathname.startsWith("/inventory")) return "Inventory";
+  if (pathname.startsWith("/communication")) return "Communication";
+  if (pathname.startsWith("/audit")) return "Audit Log";
+  if (pathname.startsWith("/help")) return "Help & Support";
   if (pathname.startsWith("/settings")) {
     return "Settings";
   }
@@ -125,6 +201,7 @@ function pageContext(pathname: string): string {
     return "Team";
   }
   if (pathname.startsWith("/admin")) {
+    if (pathname.startsWith("/admin/system")) return "System Status";
     return "Super Admin";
   }
   return "Dashboard";
@@ -161,6 +238,7 @@ export function AppShell() {
     <div className="min-h-screen bg-canvas text-ink">
       <aside className="app-sidebar fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-sidebar text-white lg:flex">
         <SidebarContent
+          business={business}
           businessName={business?.name ?? "Fashion business"}
           logoUrl={business?.logo_url}
           pathname={location.pathname}
@@ -236,6 +314,7 @@ export function AppShell() {
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
             <SidebarContent
+              business={business}
               businessName={business?.name ?? "Fashion business"}
               logoUrl={business?.logo_url}
               pathname={location.pathname}
@@ -255,6 +334,7 @@ export function AppShell() {
 }
 
 function SidebarContent({
+  business,
   businessName,
   logoUrl,
   pathname,
@@ -262,6 +342,7 @@ function SidebarContent({
   userRole,
   onLogout,
 }: {
+  business?: import("../types/auth").Business | null;
   businessName: string;
   logoUrl?: string | null;
   pathname: string;
@@ -292,7 +373,7 @@ function SidebarContent({
         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100/55">
           Workroom
         </p>
-        {navItems.map((item) => {
+        {navItems.filter((item) => !item.featureKey || business?.enabled_features?.includes(item.featureKey)).map((item) => {
           const active = item.matches(pathname);
           const Icon = item.icon;
           return (
@@ -316,7 +397,11 @@ function SidebarContent({
           <SidebarLink item={profileNavItem} pathname={pathname} />
           <SidebarLink item={settingsNavItem} pathname={pathname} />
           {userRole === "SUPER_ADMIN" ? (
-            <SidebarLink item={adminNavItem} pathname={pathname} />
+            <>
+              <SidebarLink item={adminNavItem} pathname={pathname} />
+              <SidebarLink item={systemStatusNavItem} pathname={pathname} />
+              <SidebarLink item={platformAuditNavItem} pathname={pathname} />
+            </>
           ) : null}
         </div>
       </nav>

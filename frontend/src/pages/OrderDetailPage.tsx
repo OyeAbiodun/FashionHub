@@ -10,10 +10,11 @@ import {
   Shirt,
   UserRound,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { getApiErrorMessage } from "../api/client";
+import { OrderMaterialsPanel } from "../components/OrderMaterialsPanel";
 import {
   Button,
   Card,
@@ -30,7 +31,13 @@ import {
 } from "../components/ui";
 import { useAuth } from "../hooks/useAuth";
 import { useCreateInvoice, useOrderInvoice } from "../hooks/useInvoices";
-import { useOrder, useUpdateOrderStatus } from "../hooks/useOrders";
+import {
+  useCompleteOrderFulfillment,
+  useDispatchOrderFulfillment,
+  useOrder,
+  useUpdateOrderFulfillment,
+  useUpdateOrderStatus,
+} from "../hooks/useOrders";
 import { useCreatePayment, useOrderPayments } from "../hooks/usePayments";
 import { formatDate, formatDateTime } from "../lib/date";
 import { formatMoney, moneyValue } from "../lib/money";
@@ -42,10 +49,23 @@ import {
 } from "../lib/orders";
 import type {
   OrderItem,
+  OrderDetail,
   OrderStatus,
   OrderStatusHistory,
 } from "../types/order";
 import type { Payment, PaymentMethod } from "../types/payment";
+
+const STATUS_GUIDANCE: Partial<Record<OrderStatus, string>> = {
+  DRAFT: "Order details are being collected and confirmed.",
+  CONFIRMED: "Order is approved and ready to enter production.",
+  CUTTING: "Fabric is being prepared and cut to the pattern.",
+  SEWING: "Garment construction is in progress.",
+  FITTING: "Customer fitting or adjustment is required.",
+  FINISHING: "Final stitching, pressing, and quality checks are underway.",
+  READY: "Finished outfit is ready for customer collection or delivery.",
+  DELIVERED: "Handoff is complete and recorded through delivery details.",
+  CANCELLED: "Work is stopped and the order is closed.",
+};
 
 export function OrderDetailPage() {
   const { orderId } = useParams();
@@ -66,6 +86,7 @@ export function OrderDetailPage() {
   const [paymentDate, setPaymentDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const [paymentInstallmentId, setPaymentInstallmentId] = useState("");
   const [notice, setNotice] = useState("");
   const order = orderQuery.data;
   const paymentsQuery = useOrderPayments(orderId);
@@ -76,9 +97,10 @@ export function OrderDetailPage() {
   );
   const invoiceMutation = useCreateInvoice(orderId ?? "");
   const allowedStatuses = useMemo(
-    () => (order ? ORDER_TRANSITIONS[order.status] : []),
-    [order],
+    () => (order ? (business?.order_status_configuration?.transitions?.[order.status] as OrderStatus[] | undefined ?? ORDER_TRANSITIONS[order.status]).filter((status) => status !== "DELIVERED") : []),
+    [order, business?.order_status_configuration],
   );
+  const statusLabel = (status: string) => business?.order_status_configuration?.labels?.[status] ?? formatStatus(status);
   const currency = business?.currency ?? "NGN";
 
   if (orderQuery.isLoading) {
@@ -144,6 +166,7 @@ export function OrderDetailPage() {
         reference: paymentReference.trim() || null,
         notes: paymentNotes.trim() || null,
         paid_at: new Date(`${paymentDate}T12:00:00`).toISOString(),
+        ...(paymentInstallmentId ? { installment_id: paymentInstallmentId, apply_automatically: false } : {}),
       });
       setPaymentOpen(false);
       setNotice("Payment recorded successfully.");
@@ -242,6 +265,55 @@ export function OrderDetailPage() {
 
       <div className="mt-7 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-6">
+          {order.payment_plan ? (
+            <Card className="p-5 sm:p-6">
+              <h2 className="text-lg font-semibold text-ink">Installment plan</h2>
+              <p className="mt-1 text-sm text-muted">
+                Scheduled amounts are separate from received payments. Record a payment when funds arrive.
+              </p>
+              {order.payment_plan.advance_amount ? (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-stone-50 px-3 py-3 text-sm">
+                  <span>
+                    <span className="block font-medium text-ink">Optional advance</span>
+                    <span className="text-muted">
+                      Due {order.payment_plan.advance_due_date ? formatDate(order.payment_plan.advance_due_date) : "on order"} · Paid {formatMoney(order.payment_plan.advance_paid_amount, currency)}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <StatusBadge
+                      status={order.payment_plan.advance_status ?? "UNPAID"}
+                      label={formatStatus(order.payment_plan.advance_status ?? "UNPAID")}
+                    />
+                    <strong>{formatMoney(order.payment_plan.advance_outstanding_amount, currency)} left</strong>
+                  </span>
+                </div>
+              ) : null}
+              <ol className="mt-3 divide-y divide-border">
+                {order.payment_plan.installments.map((installment) => (
+                  <li key={installment.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                    <span>
+                      <span className="block font-medium text-ink">{installment.label}</span>
+                      <span className="text-muted">Due {formatDate(installment.due_date)} · Paid {formatMoney(installment.paid_amount, currency)}</span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <StatusBadge
+                        status={installment.status}
+                        label={formatStatus(installment.status)}
+                      />
+                      <strong>{formatMoney(installment.outstanding_amount, currency)} left</strong>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          ) : null}
+          <FulfillmentCard
+            order={order}
+            timezone={business?.timezone}
+            currency={currency}
+            deliveryChargesEnabled={business?.delivery_charges_enabled ?? false}
+          />
+          {business?.enabled_features?.includes("inventory") ? <OrderMaterialsPanel orderId={order.id} /> : null}
           <Card className="p-5 sm:p-6">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-soft text-primary">
@@ -269,6 +341,8 @@ export function OrderDetailPage() {
               </p>
             </Card>
           ) : null}
+
+          {order.reference_image ? <Card className="p-5 sm:p-6"><h2 className="text-lg font-semibold text-ink">Order reference photo</h2><img className="mt-4 max-h-[32rem] rounded-lg border border-border object-contain" src={order.reference_image} alt={`Reference photo for ${order.order_number}`} /></Card> : null}
 
           <PaymentsCard
             payments={paymentsQuery.data ?? []}
@@ -334,7 +408,7 @@ export function OrderDetailPage() {
       <Dialog
         open={dialogOpen}
         title="Update Status"
-        description={`Move ${order.order_number} forward from ${formatStatus(order.status)}.`}
+        description={`Move ${order.order_number} forward from ${statusLabel(order.status)}.`}
         onClose={() => {
           setDialogOpen(false);
           setConfirmCancel(false);
@@ -343,22 +417,14 @@ export function OrderDetailPage() {
         <form onSubmit={submitStatus}>
           <label className="block">
             <span className="text-sm font-medium text-ink">Next status</span>
-            <select
-              className={inputStyles}
-              value={nextStatus}
-              onChange={(event) => {
-                setNextStatus(event.target.value as OrderStatus | "");
-                setConfirmCancel(false);
-              }}
-              required
-            >
-              <option value="">Choose status</option>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {allowedStatuses.map((statusOption) => (
-                <option key={statusOption} value={statusOption}>
-                  {formatStatus(statusOption)}
-                </option>
+                <label key={statusOption} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${nextStatus === statusOption ? "border-primary bg-primary-soft/50 ring-1 ring-primary" : "border-border hover:bg-stone-50"}`}>
+                  <input className="mt-1 h-4 w-4 accent-primary" type="radio" name="next-status" value={statusOption} checked={nextStatus === statusOption} onChange={() => { setNextStatus(statusOption); setConfirmCancel(false); }} />
+                  <span><span className="block text-sm font-semibold text-ink">{statusLabel(statusOption)}</span><span className="mt-1 block text-xs leading-5 text-muted">{STATUS_GUIDANCE[statusOption]}</span></span>
+                </label>
               ))}
-            </select>
+            </div>
           </label>
           <label className="mt-4 block">
             <span className="text-sm font-medium text-ink">Notes optional</span>
@@ -453,6 +519,17 @@ export function OrderDetailPage() {
               </select>
             </label>
             <label>
+              {order.payment_plan && business?.enabled_features?.includes("installment_plans") ? (
+                <span className="text-sm font-medium text-ink">Apply to installment optional</span>
+              ) : null}
+              {order.payment_plan && business?.enabled_features?.includes("installment_plans") ? (
+                <select className={inputStyles} value={paymentInstallmentId} onChange={(event) => setPaymentInstallmentId(event.target.value)}>
+                  <option value="">Apply automatically</option>
+                  {order.payment_plan.installments.filter((entry) => moneyValue(entry.outstanding_amount) > 0).map((entry) => <option key={entry.id} value={entry.id}>{entry.label} · {formatMoney(entry.outstanding_amount, currency)} remaining</option>)}
+                </select>
+              ) : null}
+            </label>
+            <label>
               <span className="text-sm font-medium text-ink">
                 Reference optional
               </span>
@@ -509,6 +586,149 @@ export function OrderDetailPage() {
   );
 }
 
+function FulfillmentCard({
+  order,
+  timezone,
+  currency,
+  deliveryChargesEnabled,
+}: {
+  order: OrderDetail;
+  timezone?: string;
+  currency: string;
+  deliveryChargesEnabled: boolean;
+}) {
+  const fulfillment = order.fulfillment;
+  const update = useUpdateOrderFulfillment(order.id);
+  const dispatch = useDispatchOrderFulfillment(order.id);
+  const complete = useCompleteOrderFulfillment(order.id);
+  const [method, setMethod] = useState<"PICKUP" | "DELIVERY">(fulfillment?.method ?? "PICKUP");
+  const [name, setName] = useState(fulfillment?.recipient_name ?? "");
+  const [phone, setPhone] = useState(fulfillment?.recipient_phone ?? "");
+  const [address, setAddress] = useState(fulfillment?.delivery_address ?? "");
+  const [instructions, setInstructions] = useState(fulfillment?.delivery_instructions ?? "");
+  const [tracking, setTracking] = useState(fulfillment?.tracking_reference ?? "");
+  const [proofPhoto, setProofPhoto] = useState("");
+  const [deliveryCharge, setDeliveryCharge] = useState(order.delivery_charge ?? "0.00");
+  const [error, setError] = useState("");
+  const terminal = order.status === "DELIVERED" || order.status === "CANCELLED";
+  const locked = terminal || Boolean(fulfillment && fulfillment.status !== "PLANNED");
+  const busy = update.isPending || dispatch.isPending || complete.isPending;
+  const detailsDirty = !fulfillment ||
+    method !== fulfillment.method ||
+    name !== (fulfillment.recipient_name ?? "") ||
+    phone !== (fulfillment.recipient_phone ?? "") ||
+    address !== (fulfillment.delivery_address ?? "") ||
+    instructions !== (fulfillment.delivery_instructions ?? "") ||
+    tracking !== (fulfillment.tracking_reference ?? "");
+  const chargeDirty = deliveryChargesEnabled &&
+    Math.round(moneyValue(deliveryCharge) * 100) !== Math.round(moneyValue(order.delivery_charge ?? "0.00") * 100);
+  const fulfillmentDirty = detailsDirty || chargeDirty;
+
+  useEffect(() => {
+    setMethod(fulfillment?.method ?? "PICKUP");
+    setName(fulfillment?.recipient_name ?? "");
+    setPhone(fulfillment?.recipient_phone ?? "");
+    setAddress(fulfillment?.delivery_address ?? "");
+    setInstructions(fulfillment?.delivery_instructions ?? "");
+    setTracking(fulfillment?.tracking_reference ?? "");
+    setDeliveryCharge(order.delivery_charge ?? "0.00");
+  }, [fulfillment, order.delivery_charge]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await update.mutateAsync({
+        method,
+        recipient_name: name.trim() || null,
+        recipient_phone: phone.trim() || null,
+        delivery_address: method === "DELIVERY" ? address.trim() || null : null,
+        delivery_instructions: instructions.trim() || null,
+        tracking_reference: tracking.trim() || null,
+        delivery_charge: deliveryChargesEnabled
+          ? method === "DELIVERY" ? deliveryCharge || "0.00" : "0.00"
+          : null,
+      });
+    } catch (cause) {
+      setError(getApiErrorMessage(cause));
+    }
+  }
+
+  async function run(action: "dispatch" | "complete") {
+    setError("");
+    try {
+      if (action === "dispatch") await dispatch.mutateAsync({});
+      else {
+        if (fulfillment?.method === "DELIVERY" && !proofPhoto) {
+          setError("Capture a proof photo before confirming handoff.");
+          return;
+        }
+        await complete.mutateAsync({
+          proof_of_delivery_url: proofPhoto,
+        });
+        setProofPhoto("");
+      }
+    } catch (cause) {
+      setError(getApiErrorMessage(cause));
+    }
+  }
+
+  const chargeLocked = locked || Boolean(order.payment_plan) || moneyValue(order.amount_paid) > 0;
+  const canComplete = Boolean(fulfillment && order.status === "READY" && fulfillment.status !== "COMPLETED");
+
+  return (
+    <Card className="p-5 sm:p-6">
+      <h2 className="text-lg font-semibold text-ink">Completed outfit handoff</h2>
+      <p className="mt-1 text-sm text-muted">Choose customer pickup or business delivery, then record dispatch and handoff.</p>
+      <form className="mt-4 space-y-4" onSubmit={save}>
+        <label className="block">
+          <span className="text-sm font-medium text-ink">Fulfillment method</span>
+          <select className={inputStyles} value={method} disabled={locked} onChange={(event) => setMethod(event.target.value as "PICKUP" | "DELIVERY")}>
+            <option value="PICKUP">Customer pickup</option>
+            <option value="DELIVERY">Business delivery</option>
+          </select>
+        </label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label><span className="text-sm font-medium text-ink">Recipient name optional</span><input className={inputStyles} value={name} disabled={locked} onChange={(event) => setName(event.target.value)} /></label>
+          <label><span className="text-sm font-medium text-ink">Recipient phone optional</span><input className={inputStyles} type="tel" value={phone} disabled={locked} onChange={(event) => setPhone(event.target.value)} /></label>
+        </div>
+        {method === "DELIVERY" ? (
+          <>
+            <label className="block"><span className="text-sm font-medium text-ink">Delivery address</span><textarea className={textareaStyles} value={address} disabled={locked} required onChange={(event) => setAddress(event.target.value)} /></label>
+            <label className="block"><span className="text-sm font-medium text-ink">Delivery instructions optional</span><textarea className={textareaStyles} value={instructions} disabled={locked} onChange={(event) => setInstructions(event.target.value)} /></label>
+            <label className="block"><span className="text-sm font-medium text-ink">Tracking reference optional</span><input className={inputStyles} value={tracking} disabled={locked} onChange={(event) => setTracking(event.target.value)} /></label>
+            {deliveryChargesEnabled ? (
+              <label className="block">
+                <span className="text-sm font-medium text-ink">Delivery charge · {currency}</span>
+                <input className={inputStyles} type="number" inputMode="decimal" min="0" step="0.01" value={deliveryCharge} disabled={chargeLocked} onChange={(event) => setDeliveryCharge(event.target.value)} />
+                <span className="mt-1 block text-xs text-muted">Included in the order total and invoice. Locked after an installment plan or payment.</span>
+              </label>
+            ) : null}
+          </>
+        ) : null}
+        {!locked ? <Button type="submit" variant="outline" disabled={busy}>Save fulfillment details</Button> : null}
+      </form>
+      {fulfillment && order.status === "READY" ? (
+        <div className="mt-4 flex flex-wrap gap-3 border-t border-border pt-4">
+          {canComplete && fulfillment.method === "DELIVERY" ? <label className="w-full text-sm font-medium text-ink">Capture delivery proof photo<input className={inputStyles} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 1_000_000) { setError("Proof photos must be 1 MB or smaller."); return; } const reader = new FileReader(); reader.onload = () => setProofPhoto(typeof reader.result === "string" ? reader.result : ""); reader.readAsDataURL(file); }} /><span className="mt-1 block text-xs text-muted">A photo is required to confirm delivery.</span></label> : null}
+          {fulfillment.method === "PICKUP" && method === fulfillment.method && !fulfillmentDirty && fulfillment.status === "PLANNED" ? <Button disabled={busy} onClick={() => void run("complete")}>Confirm pickup handoff</Button> : null}
+          {fulfillment.method === "DELIVERY" && method === fulfillment.method && !fulfillmentDirty && fulfillment.status === "PLANNED" ? <Button disabled={busy} onClick={() => void run("dispatch")}>Mark out for delivery</Button> : null}
+          {fulfillment.method === "DELIVERY" && method === fulfillment.method && !fulfillmentDirty && fulfillment.status === "OUT_FOR_DELIVERY" ? <Button disabled={busy} onClick={() => void run("complete")}>Confirm delivered to customer</Button> : null}
+          {fulfillment.status === "OUT_FOR_DELIVERY" ? <StatusBadge status="OUT_FOR_DELIVERY" label="Out for delivery" /> : null}
+        </div>
+      ) : null}
+      {fulfillment?.status === "COMPLETED" ? <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Handoff completed{fulfillment.completed_at ? ` ${formatDateTime(fulfillment.completed_at, timezone)}` : ""}.</p> : null}
+      {fulfillment?.proof_of_delivery_url ? <img className="mt-3 max-h-80 rounded-lg border border-border object-contain" src={fulfillment.proof_of_delivery_url} alt="Proof photo of delivered outfit" /> : null}
+      {error ? <div className="mt-4"><InlineError message={error} /></div> : null}
+      {fulfillment?.events.length ? (
+        <ol className="mt-5 space-y-3 border-t border-border pt-4">
+          {fulfillment.events.map((event) => <li className="text-sm" key={event.id}><span className="font-medium text-ink">{formatStatus(event.event_type)}</span><span className="text-muted"> · {formatDateTime(event.occurred_at, timezone)} · {event.actor_name}</span>{event.notes ? <p className="mt-1 text-muted">{event.notes}</p> : null}</li>)}
+        </ol>
+      ) : null}
+    </Card>
+  );
+}
+
 function GarmentCard({
   item,
   currency,
@@ -532,9 +752,9 @@ function GarmentCard({
       ) : null}
       <div className="mt-4 flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm">
         <span className="text-muted">
-          {formatMoney(item.unit_price, currency)} each
+          {formatMoney(item.unit_price, currency)} per garment
         </span>
-        <strong>{formatMoney(item.line_total, currency)}</strong>
+        <strong>{formatMoney(item.line_total, currency)} total</strong>
       </div>
       {item.measurement_profile_id ? (
         <Link
@@ -592,6 +812,13 @@ function FinancialSummary({
           value={order.discount_amount}
           currency={currency}
         />
+        {moneyValue(order.delivery_charge ?? "0.00") > 0 ? (
+          <FinancialRow
+            label="Delivery charge"
+            value={order.delivery_charge ?? "0.00"}
+            currency={currency}
+          />
+        ) : null}
         <div className="border-t border-border pt-3">
           <FinancialRow
             label="Total"
@@ -680,6 +907,11 @@ function PaymentsCard({
                 {formatStatus(payment.payment_method)}
                 {payment.reference ? ` · ${payment.reference}` : ""}
               </p>
+              {payment.allocations?.length ? (
+                <p className="mt-1 text-xs text-muted">
+                  Applied to {payment.allocations.map((allocation) => `${allocation.label} ${formatMoney(allocation.amount, currency)}`).join(" · ")}
+                </p>
+              ) : null}
             </div>
             <div className="text-sm text-muted sm:text-right">
               <p>{formatDateTime(payment.paid_at, timezone)}</p>

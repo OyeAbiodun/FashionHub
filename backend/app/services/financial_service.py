@@ -1,19 +1,24 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.business import Business
+from app.core.timezone import business_today, business_timezone, current_month_utc_bounds
+from app.models.admin_audit import BusinessAuditLog
 from app.models.finance import (
     Invoice,
     InvoiceCounter,
     InvoiceStatus,
     Payment,
+    PaymentAllocation,
+    PaymentInstallment,
+    PaymentInstallmentPlan,
     PaymentStatus,
 )
 from app.models.order import Order, OrderStatus
@@ -30,10 +35,35 @@ from app.schemas.finance import (
     PaymentListItem,
     PaymentListResponse,
     PaymentResponse,
+    PaymentSummaryResponse,
+    PaymentAllocationResponse,
     total_pages,
 )
 
 ZERO = Decimal("0.00")
+
+
+async def record_business_audit(
+    session: AsyncSession,
+    business: Business,
+    actor: User,
+    action: str,
+    summary: str,
+    request=None,
+    details: dict | None = None,
+) -> None:
+    configuration = business.audit_configuration or {}
+    if not configuration.get("enabled", True):
+        return
+    session.add(BusinessAuditLog(
+        business_id=business.id,
+        actor_id=actor.id,
+        action=action,
+        summary=summary,
+        details=details or {} if configuration.get("capture_details", False) else {},
+        source_ip=request.client.host if request and request.client and configuration.get("capture_ip", False) else None,
+        user_agent=(request.headers.get("user-agent", "")[:500] or None) if request and configuration.get("capture_device", False) else None,
+    ))
 
 
 def user_name(user: User | None) -> str:
@@ -58,6 +88,9 @@ async def tenant_order(session: AsyncSession, business: Business, order_id: uuid
             selectinload(Order.items),
             selectinload(Order.payments).selectinload(Payment.received_by_user),
             selectinload(Order.invoice),
+            selectinload(Order.payment_plan).selectinload(PaymentInstallmentPlan.installments)
+            .selectinload(PaymentInstallment.allocations),
+            selectinload(Order.payment_plan).selectinload(PaymentInstallmentPlan.allocations),
         )
         .where(Order.id == order_id, Order.business_id == business.id)
     )
@@ -72,7 +105,10 @@ def calculate_order_subtotal(order: Order) -> Decimal:
 
 
 def calculate_order_total(order: Order) -> Decimal:
-    return max(calculate_order_subtotal(order) - order.discount_amount, ZERO)
+    return max(
+        calculate_order_subtotal(order) - order.discount_amount + order.delivery_charge,
+        ZERO,
+    )
 
 
 def calculate_successful_payments(order: Order) -> Decimal:
@@ -116,7 +152,74 @@ def payment_response(payment: Payment) -> PaymentResponse:
         received_by_name=user_name(payment.received_by_user),
         paid_at=payment.paid_at,
         created_at=payment.created_at,
+        allocations=[
+            PaymentAllocationResponse(
+                amount=allocation.amount,
+                is_advance=allocation.is_advance,
+                installment_id=allocation.installment_id,
+                label=(
+                    "Advance"
+                    if allocation.is_advance
+                    else allocation.installment.label if allocation.installment else "Installment"
+                ),
+            )
+            for allocation in payment.allocations
+        ],
     )
+
+
+def allocate_payment_to_plan(
+    session: AsyncSession,
+    payment: Payment,
+    plan: PaymentInstallmentPlan,
+    installment_id: uuid.UUID | None = None,
+) -> None:
+    if installment_id is not None:
+        installment = next((entry for entry in plan.installments if entry.id == installment_id), None)
+        if installment is None:
+            raise HTTPException(status_code=404, detail="Installment not found for this order.")
+        already_paid = sum((allocation.amount for allocation in installment.allocations), ZERO)
+        remaining = installment.amount - already_paid
+        if payment.amount > remaining:
+            raise HTTPException(status_code=422, detail=f"Payment exceeds this installment's outstanding amount of {remaining:.2f}.")
+        session.add(PaymentAllocation(payment=payment, plan=plan, installment=installment, amount=payment.amount))
+        return
+    remaining = payment.amount
+    if plan.advance_amount is not None and plan.advance_amount > ZERO:
+        already_paid = sum(
+            (allocation.amount for allocation in plan.allocations if allocation.is_advance), ZERO
+        )
+        amount = min(remaining, max(plan.advance_amount - already_paid, ZERO))
+        if amount > ZERO:
+            allocation = PaymentAllocation(
+                payment=payment,
+                plan=plan,
+                is_advance=True,
+                amount=amount,
+            )
+            session.add(allocation)
+            remaining -= amount
+
+    for installment in plan.installments:
+        if remaining <= ZERO:
+            break
+        already_paid = sum((allocation.amount for allocation in installment.allocations), ZERO)
+        amount = min(remaining, max(installment.amount - already_paid, ZERO))
+        if amount > ZERO:
+            allocation = PaymentAllocation(
+                payment=payment,
+                plan=plan,
+                installment=installment,
+                amount=amount,
+            )
+            session.add(allocation)
+            remaining -= amount
+
+    if remaining > ZERO:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The payment plan does not cover the order's outstanding balance.",
+        )
 
 
 async def record_payment(
@@ -125,6 +228,7 @@ async def record_payment(
     current_user: User,
     order_id: uuid.UUID,
     payload: PaymentCreate,
+    request=None,
 ) -> Payment:
     locked_id = (
         await session.execute(
@@ -163,15 +267,28 @@ async def record_payment(
     try:
         await session.flush()
         order.payments.append(payment)
+        if order.payment_plan is not None and "installment_plans" in (business.enabled_features or []):
+            allocate_payment_to_plan(
+                session,
+                payment,
+                order.payment_plan,
+                payload.installment_id if not payload.apply_automatically else None,
+            )
+        elif payload.installment_id is not None or not payload.apply_automatically:
+            raise HTTPException(status_code=409, detail="Installment payment is not enabled for this business or order.")
         if order.invoice is not None and order.invoice.status != InvoiceStatus.CANCELLED:
             order.invoice.status = calculate_invoice_status(order)
+        await record_business_audit(session, business, current_user, "PAYMENT_RECORDED", f"Recorded payment of {payload.amount} for {order.order_number}", request, {"order_id": str(order.id), "amount": str(payload.amount), "payment_method": payload.payment_method.value})
         await session.commit()
     except Exception:
         await session.rollback()
         raise
     result = await session.execute(
         select(Payment)
-        .options(selectinload(Payment.received_by_user))
+        .options(
+            selectinload(Payment.received_by_user),
+            selectinload(Payment.allocations).selectinload(PaymentAllocation.installment),
+        )
         .where(Payment.id == payment.id, Payment.business_id == business.id)
     )
     return result.scalar_one()
@@ -183,7 +300,10 @@ async def list_order_payments(
     await tenant_order(session, business, order_id)
     result = await session.execute(
         select(Payment)
-        .options(selectinload(Payment.received_by_user))
+        .options(
+            selectinload(Payment.received_by_user),
+            selectinload(Payment.allocations).selectinload(PaymentAllocation.installment),
+        )
         .where(Payment.business_id == business.id, Payment.order_id == order_id)
         .order_by(Payment.paid_at.desc(), Payment.created_at.desc())
     )
@@ -206,7 +326,12 @@ async def list_customer_payments(
     ).scalar_one()
     result = await session.execute(
         select(Payment)
-        .options(selectinload(Payment.received_by_user), selectinload(Payment.order))
+        .options(
+            selectinload(Payment.received_by_user),
+            selectinload(Payment.order),
+            selectinload(Payment.customer),
+            selectinload(Payment.allocations).selectinload(PaymentAllocation.installment),
+        )
         .where(*filters)
         .order_by(Payment.paid_at.desc(), Payment.created_at.desc())
         .offset((page - 1) * page_size)
@@ -215,7 +340,9 @@ async def list_customer_payments(
     return PaymentListResponse(
         items=[
             PaymentListItem(
-                **payment_response(payment).model_dump(), order_number=payment.order.order_number
+                **payment_response(payment).model_dump(),
+                order_number=payment.order.order_number,
+                customer_name=customer_name(payment.customer),
             )
             for payment in result.scalars().all()
         ],
@@ -226,6 +353,95 @@ async def list_customer_payments(
     )
 
 
+async def list_business_payments(
+    session: AsyncSession,
+    business: Business,
+    page: int,
+    page_size: int,
+    payment_status: PaymentStatus | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> PaymentListResponse:
+    filters = (Payment.business_id == business.id,)
+    if payment_status is not None:
+        filters += (Payment.status == payment_status,)
+    if start_at is not None:
+        filters += (Payment.paid_at >= start_at,)
+    if end_at is not None:
+        filters += (Payment.paid_at < end_at,)
+    total = (await session.execute(select(func.count()).select_from(Payment).where(*filters))).scalar_one()
+    result = await session.execute(
+        select(Payment)
+        .options(
+            selectinload(Payment.received_by_user),
+            selectinload(Payment.order),
+            selectinload(Payment.customer),
+            selectinload(Payment.allocations).selectinload(PaymentAllocation.installment),
+        )
+        .where(*filters)
+        .order_by(Payment.paid_at.desc(), Payment.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return PaymentListResponse(
+        items=[
+            PaymentListItem(
+                **payment_response(payment).model_dump(),
+                order_number=payment.order.order_number,
+                customer_name=customer_name(payment.customer),
+            )
+            for payment in result.scalars().all()
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages(total, page_size),
+    )
+
+
+async def get_business_payment_summary(
+    session: AsyncSession, business: Business
+) -> PaymentSummaryResponse:
+    timezone = business_timezone(business)
+    today = business_today(business)
+    today_start = datetime.combine(today, time.min, tzinfo=timezone)
+    tomorrow_start = today_start + timedelta(days=1)
+    month_start, next_month_start = current_month_utc_bounds(business)
+    successful = Payment.status == PaymentStatus.SUCCESSFUL
+    row = (
+        await session.execute(
+            select(
+                func.count(Payment.id).filter(successful),
+                func.coalesce(func.sum(case((successful, Payment.amount), else_=0)), 0),
+                func.count(Payment.id).filter(
+                    successful,
+                    Payment.paid_at >= today_start.astimezone(UTC),
+                    Payment.paid_at < tomorrow_start.astimezone(UTC),
+                ),
+                func.coalesce(func.sum(case((
+                    successful & (Payment.paid_at >= today_start.astimezone(UTC)) & (Payment.paid_at < tomorrow_start.astimezone(UTC)),
+                    Payment.amount,
+                ), else_=0)), 0),
+                func.count(Payment.id).filter(
+                    successful,
+                    Payment.paid_at >= month_start,
+                    Payment.paid_at < next_month_start,
+                ),
+                func.coalesce(func.sum(case((
+                    successful & (Payment.paid_at >= month_start) & (Payment.paid_at < next_month_start),
+                    Payment.amount,
+                ), else_=0)), 0),
+                func.count(Payment.id).filter(Payment.status == PaymentStatus.PENDING),
+            ).where(Payment.business_id == business.id)
+        )
+    ).one()
+    return PaymentSummaryResponse(
+        successful_count=row[0], successful_amount=row[1],
+        today_count=row[2], today_amount=row[3],
+        month_count=row[4], month_amount=row[5], pending_count=row[6],
+        today_start=today_start, tomorrow_start=tomorrow_start,
+        month_start=month_start, next_month_start=next_month_start,
+    )
 async def generate_invoice_number(session: AsyncSession, business: Business) -> str:
     await session.execute(select(Business.id).where(Business.id == business.id).with_for_update())
     counter = await session.get(InvoiceCounter, business.id, with_for_update=True)
@@ -299,6 +515,10 @@ async def get_invoice(session: AsyncSession, business: Business, invoice_id: uui
             selectinload(Invoice.order)
             .selectinload(Order.payments)
             .selectinload(Payment.received_by_user),
+            selectinload(Invoice.order)
+            .selectinload(Order.payments)
+            .selectinload(Payment.allocations)
+            .selectinload(PaymentAllocation.installment),
         )
         .where(Invoice.id == invoice_id, Invoice.business_id == business.id)
     )
@@ -378,6 +598,7 @@ def invoice_response(invoice: Invoice) -> InvoiceResponse:
         financial_summary=InvoiceFinancialSummary(
             subtotal=calculate_order_subtotal(order),
             discount_amount=order.discount_amount,
+            delivery_charge=order.delivery_charge,
             total=calculate_order_total(order),
             amount_paid=calculate_successful_payments(order),
             outstanding_balance=calculate_outstanding_balance(order),

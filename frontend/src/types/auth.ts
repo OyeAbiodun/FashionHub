@@ -14,6 +14,11 @@ export interface Business {
   enabled_features?: string[];
   max_staff_users?: number;
   is_active?: boolean;
+  delivery_charges_enabled?: boolean;
+  order_status_configuration?: { labels?: Record<string, string>; transitions?: Record<string, string[]> };
+  audit_configuration?: { enabled?: boolean; capture_ip?: boolean; capture_device?: boolean; capture_details?: boolean };
+  subscription_plan_id?: string | null;
+  subscription_selected_at?: string | null;
 }
 
 export interface BusinessSettingsInput {
@@ -26,6 +31,9 @@ export interface BusinessSettingsInput {
   timezone: string;
   invoice_notes: string | null;
   invoice_footer: string | null;
+  delivery_charges_enabled: boolean;
+  order_status_configuration: { labels: Record<string, string>; transitions: Record<string, string[]> };
+  audit_configuration: { enabled: boolean; capture_ip: boolean; capture_device: boolean; capture_details: boolean };
 }
 
 export interface User {

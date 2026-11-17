@@ -26,7 +26,8 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.business import Business
     from app.models.customer import Customer
-    from app.models.finance import Invoice, Payment
+    from app.models.finance import Invoice, Payment, PaymentInstallmentPlan
+    from app.models.fulfillment import OrderFulfillment
     from app.models.measurement import MeasurementProfile
     from app.models.user import User
 
@@ -56,6 +57,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "orders"
     __table_args__ = (
         CheckConstraint("discount_amount >= 0", name="discount_nonnegative"),
+        CheckConstraint("delivery_charge >= 0", name="delivery_charge_nonnegative"),
         UniqueConstraint("business_id", "order_number", name="uq_orders_business_id_order_number"),
         Index("ix_orders_business_id", "business_id"),
         Index("ix_orders_business_id_status", "business_id", "status"),
@@ -76,12 +78,16 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     order_date: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reference_image: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discount_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default="0.00"
+    )
+    delivery_charge: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default="0.00"
     )
 
@@ -100,6 +106,12 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     payments: Mapped[list[Payment]] = relationship(back_populates="order")
     invoice: Mapped[Invoice | None] = relationship(back_populates="order", uselist=False)
+    payment_plan: Mapped[PaymentInstallmentPlan | None] = relationship(
+        back_populates="order", uselist=False, cascade="all, delete-orphan"
+    )
+    fulfillment: Mapped[OrderFulfillment | None] = relationship(
+        back_populates="order", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):

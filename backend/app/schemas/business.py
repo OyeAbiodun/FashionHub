@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -33,6 +34,11 @@ class BusinessPublic(BaseModel):
     enabled_features: list[str] = Field(default_factory=list)
     max_staff_users: int = 10
     is_active: bool = True
+    delivery_charges_enabled: bool = False
+    order_status_configuration: dict[str, object] = Field(default_factory=dict)
+    audit_configuration: dict[str, object] = Field(default_factory=dict)
+    subscription_plan_id: str | None = None
+    subscription_selected_at: datetime | None = None
 
 
 class BusinessUpdate(BaseModel):
@@ -47,6 +53,39 @@ class BusinessUpdate(BaseModel):
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     invoice_notes: str | None = Field(default=None, max_length=5000)
     invoice_footer: str | None = Field(default=None, max_length=2000)
+    delivery_charges_enabled: bool | None = None
+    order_status_configuration: dict[str, object] | None = None
+    audit_configuration: dict[str, object] | None = None
+
+    @field_validator("order_status_configuration")
+    @classmethod
+    def validate_order_status_configuration(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        if value is None:
+            return None
+        from app.models.order import OrderStatus
+
+        allowed = {status.value for status in OrderStatus}
+        labels = value.get("labels", {})
+        transitions = value.get("transitions", {})
+        if not isinstance(labels, dict) or not isinstance(transitions, dict):
+            raise ValueError("Status labels and transitions must be objects.")
+        if any(key not in allowed or not isinstance(label, str) or not label.strip() or len(label) > 40 for key, label in labels.items()):
+            raise ValueError("Status labels must use known statuses and contain 1 to 40 characters.")
+        if any(key not in allowed or not isinstance(targets, list) or any(target not in allowed for target in targets) for key, targets in transitions.items()):
+            raise ValueError("Status transitions must use known statuses.")
+        if transitions.get("DELIVERED") or transitions.get("CANCELLED"):
+            raise ValueError("Delivered and cancelled statuses must remain terminal.")
+        return value
+
+    @field_validator("audit_configuration")
+    @classmethod
+    def validate_audit_configuration(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        if value is None:
+            return None
+        allowed = {"enabled", "capture_ip", "capture_device", "capture_details"}
+        if set(value) - allowed or any(not isinstance(item, bool) for item in value.values()):
+            raise ValueError("Audit options must be boolean enabled/capture settings.")
+        return value
 
     @field_validator("name", "phone", mode="before")
     @classmethod

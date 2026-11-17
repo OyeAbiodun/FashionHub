@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -92,3 +92,27 @@ class Task(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     created_by: Mapped[User] = relationship("User", foreign_keys=[created_by_id], lazy="selectin")
     order: Mapped[Order | None] = relationship("Order", lazy="selectin")
     customer: Mapped[Customer | None] = relationship("Customer", lazy="selectin")
+    comments: Mapped[list[TaskComment]] = relationship(
+        back_populates="task", cascade="all, delete-orphan", order_by=lambda: TaskComment.created_at
+    )
+
+
+class TaskComment(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "task_comments"
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    author_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    task: Mapped[Task] = relationship(back_populates="comments")
+    author: Mapped[User] = relationship(lazy="selectin")

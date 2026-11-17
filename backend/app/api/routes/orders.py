@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_business, get_current_user, require_feature_permission
@@ -15,6 +15,12 @@ from app.schemas.order import (
     OrderListResponse,
     OrderStatusUpdate,
     OrderUpdate,
+)
+from app.schemas.fulfillment import FulfillmentAction, FulfillmentUpdate
+from app.services.fulfillment_service import (
+    complete_fulfillment,
+    dispatch_fulfillment,
+    update_fulfillment,
 )
 from app.services.order_service import (
     create_order,
@@ -37,14 +43,14 @@ async def list_order_records(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
     search: Annotated[str | None, Query(max_length=200)] = None,
-    status_filter: Annotated[list[OrderStatus] | None, Query(alias="status")] = None,
+    status_filter: Annotated[list[str] | None, Query(alias="status")] = None,
     due: Literal["today", "tomorrow", "this_week", "overdue", "upcoming"] | None = None,
     customer_id: uuid.UUID | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
     return await list_orders(
-        session, business, search, status_filter, due, customer_id, page, page_size
+        session, business, search, [OrderStatus(value) for value in status_filter] if status_filter else None, due, customer_id, page, page_size
     )
 
 
@@ -59,8 +65,9 @@ async def create_order_record(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
     current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
 ) -> OrderDetailResponse:
-    order = await create_order(session, business, current_user, payload)
+    order = await create_order(session, business, current_user, payload, request)
     return order_response(order, business)
 
 
@@ -88,8 +95,10 @@ async def update_order_record(
     payload: OrderUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
 ) -> OrderDetailResponse:
-    order = await update_order(session, business, order_id, payload)
+    order = await update_order(session, business, order_id, payload, current_user, request)
     return order_response(order, business)
 
 
@@ -104,8 +113,57 @@ async def update_order_status_record(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     business: Annotated[Business, Depends(get_current_business)],
     current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
 ) -> OrderDetailResponse:
-    order = await update_order_status(session, business, current_user, order_id, payload)
+    order = await update_order_status(session, business, current_user, order_id, payload, request)
+    return order_response(order, business)
+
+
+@router.put(
+    "/orders/{order_id}/fulfillment",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:write"))],
+)
+async def update_order_fulfillment_record(
+    order_id: uuid.UUID,
+    payload: FulfillmentUpdate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> OrderDetailResponse:
+    order = await update_fulfillment(session, business, current_user, order_id, payload)
+    return order_response(order, business)
+
+
+@router.post(
+    "/orders/{order_id}/fulfillment/dispatch",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:write"))],
+)
+async def dispatch_order_fulfillment_record(
+    order_id: uuid.UUID,
+    payload: FulfillmentAction,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> OrderDetailResponse:
+    order = await dispatch_fulfillment(session, business, current_user, order_id, payload)
+    return order_response(order, business)
+
+
+@router.post(
+    "/orders/{order_id}/fulfillment/complete",
+    response_model=OrderDetailResponse,
+    dependencies=[Depends(require_feature_permission("orders", "orders:write"))],
+)
+async def complete_order_fulfillment_record(
+    order_id: uuid.UUID,
+    payload: FulfillmentAction,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    business: Annotated[Business, Depends(get_current_business)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> OrderDetailResponse:
+    order = await complete_fulfillment(session, business, current_user, order_id, payload)
     return order_response(order, business)
 
 

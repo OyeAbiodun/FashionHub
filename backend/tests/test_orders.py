@@ -64,6 +64,7 @@ def order_payload(customer_id: str, profile_id: str | None = None, due_date: str
         "customer_id": customer_id,
         "order_date": "2026-08-08",
         "due_date": due_date,
+        "reference_image": "data:image/png;base64,AA==",
         "notes": "Wedding order.",
         "items": [
             {
@@ -228,11 +229,20 @@ async def test_overdue_filter_excludes_delivered_and_cancelled_orders(client):
     cancelled = await create_order(
         client, customer["id"], order_date="2025-12-31", due_date="2026-01-03"
     )
+    assert (
+        await client.put(
+            f"/api/v1/orders/{delivered['id']}/fulfillment", json={"method": "PICKUP"}
+        )
+    ).status_code == 200
     await client.post(f"/api/v1/orders/{delivered['id']}/status", json={"status": "CUTTING"})
     await client.post(f"/api/v1/orders/{delivered['id']}/status", json={"status": "SEWING"})
     await client.post(f"/api/v1/orders/{delivered['id']}/status", json={"status": "FINISHING"})
     await client.post(f"/api/v1/orders/{delivered['id']}/status", json={"status": "READY"})
-    await client.post(f"/api/v1/orders/{delivered['id']}/status", json={"status": "DELIVERED"})
+    assert (
+        await client.post(
+            f"/api/v1/orders/{delivered['id']}/fulfillment/complete", json={}
+        )
+    ).status_code == 200
     await client.post(f"/api/v1/orders/{cancelled['id']}/status", json={"status": "CANCELLED"})
     data = (await client.get("/api/v1/orders", params={"due": "overdue"})).json()
     assert data["total"] == 1
@@ -264,10 +274,20 @@ async def test_delivered_status_sets_delivered_at_and_is_terminal(client):
     await register_owner(client, "owner@example.com")
     customer = await create_customer(client)
     order = await create_order(client, customer["id"])
-    for next_status in ["CUTTING", "SEWING", "FINISHING", "READY", "DELIVERED"]:
+    assert (
+        await client.put(
+            f"/api/v1/orders/{order['id']}/fulfillment", json={"method": "PICKUP"}
+        )
+    ).status_code == 200
+    for next_status in ["CUTTING", "SEWING", "FINISHING", "READY"]:
         response = await client.post(
             f"/api/v1/orders/{order['id']}/status", json={"status": next_status}
         )
+        assert response.status_code == 200, response.text
+    response = await client.post(
+        f"/api/v1/orders/{order['id']}/fulfillment/complete", json={}
+    )
+    assert response.status_code == 200, response.text
     assert response.json()["delivered_at"] is not None
     terminal = await client.post(
         f"/api/v1/orders/{order['id']}/status", json={"status": "FINISHING"}

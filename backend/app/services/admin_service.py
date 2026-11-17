@@ -5,12 +5,12 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.admin_audit import AdminAuditLog
+from app.models.admin_audit import AdminAuditLog, PlatformAuditConfiguration
 from app.models.business import Business
 from app.models.customer import Customer
 from app.models.finance import Payment, PaymentStatus
 from app.models.order import Order
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.admin import (
     AdminAuditItem,
     BusinessTenantDetail,
@@ -107,6 +107,24 @@ async def get_business_tenant_detail(
         )
     ).scalar_one_or_none() or 0
 
+    active_user_count = (
+        await session.execute(
+            select(func.count(User.id)).where(
+                User.business_id == business_obj.id,
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none() or 0
+    owner = await session.scalar(
+        select(User)
+        .where(
+            User.business_id == business_obj.id,
+            User.role.in_([UserRole.OWNER, UserRole.BUSINESS_ADMIN]),
+        )
+        .order_by(User.created_at.asc())
+        .limit(1)
+    )
+
     c_count = (
         await session.execute(
             select(func.count(Customer.id)).where(Customer.business_id == business_obj.id)
@@ -122,7 +140,8 @@ async def get_business_tenant_detail(
     rev_val = (
         await session.execute(
             select(func.coalesce(func.sum(Payment.amount), 0)).where(
-                Payment.business_id == business_obj.id
+                Payment.business_id == business_obj.id,
+                Payment.status == PaymentStatus.SUCCESSFUL,
             )
         )
     ).scalar_one_or_none() or 0
@@ -140,10 +159,21 @@ async def get_business_tenant_detail(
         max_staff_users=business_obj.max_staff_users,
         is_active=business_obj.is_active,
         created_at=business_obj.created_at,
+        audit_configuration=business_obj.audit_configuration or {},
+        owner_name=(
+            " ".join(part for part in (owner.first_name, owner.last_name) if part)
+            if owner
+            else None
+        ),
+        owner_email=owner.email if owner else None,
+        owner_phone=owner.phone if owner else None,
+        active_user_count=active_user_count,
         user_count=u_count,
         customer_count=c_count,
         order_count=o_count,
         total_revenue=f"{Decimal(str(rev_val)):.2f}",
+        subscription_plan_id=business_obj.subscription_plan_id,
+        subscription_selected_at=business_obj.subscription_selected_at,
     )
 
 
@@ -295,17 +325,38 @@ async def record_admin_action(
     details: dict | None = None,
     request=None,
 ) -> None:
+    configuration = await session.get(PlatformAuditConfiguration, 1)
+    if configuration is not None and not configuration.enabled:
+        return
     session.add(
         AdminAuditLog(
             actor_id=actor.id,
             business_id=business_id,
             action=action,
             summary=summary,
-            details=details or {},
-            source_ip=request.client.host if request and request.client else None,
-            user_agent=(request.headers.get("user-agent", "")[:500] or None) if request else None,
+            details=(details or {}) if configuration is None or configuration.capture_details else {},
+            source_ip=request.client.host if request and request.client and (configuration is None or configuration.capture_ip) else None,
+            user_agent=(request.headers.get("user-agent", "")[:500] or None) if request and (configuration is None or configuration.capture_device) else None,
         )
     )
+
+
+async def get_platform_audit_configuration(session: AsyncSession) -> dict[str, bool]:
+    configuration = await session.get(PlatformAuditConfiguration, 1)
+    if configuration is None:
+        return {"enabled": True, "capture_ip": True, "capture_device": True, "capture_details": True}
+    return {"enabled": configuration.enabled, "capture_ip": configuration.capture_ip, "capture_device": configuration.capture_device, "capture_details": configuration.capture_details}
+
+
+async def update_platform_audit_configuration(session: AsyncSession, values: dict[str, bool]) -> dict[str, bool]:
+    configuration = await session.get(PlatformAuditConfiguration, 1)
+    if configuration is None:
+        configuration = PlatformAuditConfiguration(id=1)
+        session.add(configuration)
+    for key, value in values.items():
+        setattr(configuration, key, value)
+    await session.commit()
+    return await get_platform_audit_configuration(session)
 
 
 async def list_admin_audit(
@@ -340,6 +391,7 @@ async def list_admin_audit(
             business_name=business.name if business else None,
             details=entry.details,
             source_ip=entry.source_ip,
+            user_agent=entry.user_agent,
             timestamp=entry.created_at,
         )
         for entry, user, business in rows

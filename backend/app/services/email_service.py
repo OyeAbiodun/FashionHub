@@ -46,6 +46,8 @@ class TransactionalEmail:
     subject: str
     text: str
     html: str
+    from_name: str | None = None
+    reply_to: str | None = None
 
 
 class TransactionalEmailProvider(Protocol):
@@ -83,8 +85,12 @@ class SmtpEmailProvider:
         configuration = self._configuration
         email = EmailMessage()
         email["From"] = formataddr((configuration.from_name, configuration.from_email))
+        if message.from_name:
+            email.replace_header("From", formataddr((message.from_name, configuration.from_email)))
         email["To"] = message.to
         email["Subject"] = message.subject
+        if message.reply_to:
+            email["Reply-To"] = message.reply_to
         email.set_content(message.text)
         email.add_alternative(message.html, subtype="html")
         context = ssl.create_default_context()
@@ -146,6 +152,8 @@ def serialize_platform_email_configuration(
         security_mode=configuration.security_mode,
         from_email=configuration.from_email,
         from_name=configuration.from_name,
+        support_email=configuration.support_email,
+        support_whatsapp=configuration.support_whatsapp,
         configured=bool(
             configuration.enabled
             and configuration.smtp_host
@@ -191,6 +199,8 @@ async def update_platform_email_configuration(
             security_mode=payload.security_mode,
             from_email=str(payload.from_email),
             from_name=payload.from_name,
+            support_email=str(payload.support_email) if payload.support_email else None,
+            support_whatsapp=payload.support_whatsapp,
         )
         session.add(configuration)
     else:
@@ -203,6 +213,8 @@ async def update_platform_email_configuration(
         configuration.security_mode = payload.security_mode
         configuration.from_email = str(payload.from_email)
         configuration.from_name = payload.from_name
+        configuration.support_email = str(payload.support_email) if payload.support_email else None
+        configuration.support_whatsapp = payload.support_whatsapp
     await session.commit()
     await session.refresh(configuration)
     return serialize_platform_email_configuration(configuration)
@@ -226,9 +238,7 @@ async def get_configured_email_provider(
     return SmtpEmailProvider(configuration, password, settings)
 
 
-async def send_test_email(
-    session: AsyncSession, recipient: str, settings: Settings
-) -> bool:
+async def send_test_email(session: AsyncSession, recipient: str, settings: Settings) -> bool:
     configuration = await get_platform_email_configuration(session)
     provider = await get_configured_email_provider(session, settings)
     if configuration is None or provider is None:
@@ -237,9 +247,7 @@ async def send_test_email(
         to=recipient,
         subject="FashionOS Email Configuration Test",
         text="This is a FashionOS platform email configuration test.",
-        html=(
-            "<p>This is a <strong>FashionOS</strong> platform email configuration test.</p>"
-        ),
+        html=("<p>This is a <strong>FashionOS</strong> platform email configuration test.</p>"),
     )
     try:
         await provider.send(message)

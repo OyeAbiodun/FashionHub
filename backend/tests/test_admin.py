@@ -26,9 +26,7 @@ async def make_super_admin(client):
     )
     # Promote user to SUPER_ADMIN in DB
     async with session_factory() as session:
-        result = await session.execute(
-            select(User).where(User.email == "superadmin@fashionos.ng")
-        )
+        result = await session.execute(select(User).where(User.email == "superadmin@fashionos.ng"))
         user = result.scalar_one()
         user.role = UserRole.SUPER_ADMIN
         await session.commit()
@@ -95,3 +93,34 @@ async def test_admin_metrics_and_tenant_management(client):
     act_res = await client.get("/api/v1/admin/activity")
     assert act_res.status_code == 200
     assert isinstance(act_res.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_system_status_and_readonly_database_query(client):
+    await make_super_admin(client)
+
+    status_response = await client.get("/api/v1/admin/system/status")
+    assert status_response.status_code == 200, status_response.text
+    status_payload = status_response.json()
+    assert status_payload["api_status"] == "HEALTHY"
+    assert status_payload["database_status"] == "HEALTHY"
+    assert status_payload["database_table_count"] > 0
+
+    query_response = await client.post(
+        "/api/v1/admin/system/database-query",
+        json={"query": "SELECT COUNT(*) AS business_count FROM businesses"},
+    )
+    assert query_response.status_code == 200, query_response.text
+    assert query_response.json()["rows"][0]["business_count"] == 1
+
+    unsafe_response = await client.post(
+        "/api/v1/admin/system/database-query",
+        json={"query": "DELETE FROM businesses"},
+    )
+    assert unsafe_response.status_code == 422
+
+    secret_table_response = await client.post(
+        "/api/v1/admin/system/database-query",
+        json={"query": "SELECT * FROM users"},
+    )
+    assert secret_table_response.status_code == 422

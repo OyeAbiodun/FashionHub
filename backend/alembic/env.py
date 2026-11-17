@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.core.config import get_settings
-from app.models.base import Base
 from app.models.admin_audit import AdminAuditLog  # noqa: F401
+from app.models.base import Base
 from app.models.business import Business  # noqa: F401
 from app.models.customer import Customer  # noqa: F401
 from app.models.measurement import (  # noqa: F401  # noqa: F401
@@ -18,6 +18,8 @@ from app.models.measurement import (  # noqa: F401  # noqa: F401
 from app.models.password_reset import PasswordResetToken  # noqa: F401
 from app.models.password_reset_request import PasswordResetRequest  # noqa: F401
 from app.models.platform_email import PlatformEmailConfiguration  # noqa: F401
+from app.models.platform_subscription import PlatformSubscriptionConfiguration  # noqa: F401
+from app.models.task import Task, TaskComment  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 config = context.config

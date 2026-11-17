@@ -299,6 +299,10 @@ test("order creation success navigates to detail", async () => {
   await screen.findByText("Order for Bisi Adeleke");
   await userEvent.type(screen.getByLabelText(/garment type/i), "Agbada");
   await userEvent.type(screen.getByLabelText(/due date/i), "2026-08-20");
+  await userEvent.upload(
+    screen.getByLabelText(/order reference photo required/i),
+    new File(["image"], "reference.png", { type: "image/png" }),
+  );
   await userEvent.click(screen.getByRole("button", { name: /create order/i }));
   expect(await screen.findByText("Created order detail")).toBeInTheDocument();
 });
@@ -315,6 +319,10 @@ test("API creation error preserves form state", async () => {
   await screen.findByText("Order for Bisi Adeleke");
   await userEvent.type(screen.getByLabelText(/garment type/i), "Agbada");
   await userEvent.type(screen.getByLabelText(/due date/i), "2026-08-20");
+  await userEvent.upload(
+    screen.getByLabelText(/order reference photo required/i),
+    new File(["image"], "reference.png", { type: "image/png" }),
+  );
   await userEvent.click(screen.getByRole("button", { name: /create order/i }));
   expect(
     await screen.findByText("Could not create order."),
@@ -348,15 +356,19 @@ test("update status shows only allowed transitions and refreshes UI", async () =
   await userEvent.click(screen.getByRole("button", { name: /update status/i }));
   const dialog = screen.getByRole("dialog");
   expect(
-    within(dialog).getByRole("option", { name: "FITTING" }),
-  ).toBeInTheDocument();
+    within(dialog)
+      .getAllByRole("radio")
+      .some((radio) => radio.getAttribute("value") === "FITTING"),
+  ).toBe(true);
   expect(
-    within(dialog).queryByRole("option", { name: "READY" }),
-  ).not.toBeInTheDocument();
-  await userEvent.selectOptions(
-    within(dialog).getByLabelText(/next status/i),
-    "FITTING",
-  );
+    within(dialog)
+      .getAllByRole("radio")
+      .some((radio) => radio.getAttribute("value") === "CONFIRMED"),
+  ).toBe(false);
+  const fittingOption = within(dialog)
+    .getAllByRole("radio")
+    .find((radio) => radio.getAttribute("value") === "FITTING");
+  await userEvent.click(fittingOption!);
   await userEvent.type(
     within(dialog).getByLabelText(/notes optional/i),
     "Ready for fitting.",
@@ -382,10 +394,11 @@ test("cancel action requires confirmation", async () => {
   await screen.findByText("ORD-000001");
   await userEvent.click(screen.getByRole("button", { name: /update status/i }));
   const dialog = screen.getByRole("dialog");
-  await userEvent.selectOptions(
-    within(dialog).getByLabelText(/next status/i),
-    "CANCELLED",
-  );
+  const cancelledOption = within(dialog)
+    .getAllByRole("radio")
+    .find((radio) => radio.getAttribute("value") === "CANCELLED");
+  expect(cancelledOption).toBeDefined();
+  await userEvent.click(cancelledOption!);
   await userEvent.click(
     within(dialog).getByRole("button", { name: /update status/i }),
   );

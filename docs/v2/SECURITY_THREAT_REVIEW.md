@@ -42,9 +42,11 @@ Use domain-specific immutable records, not a universal payload dump. Never store
 ## Security decisions deferred to their session
 
 - V2.2 chooses invitation delivery and account-email verification mechanics.
-- V2.3 selects any messaging provider and callback verification scheme.
-- V2.4 decides whether negative stock is forbidden or permissioned as an audited exception.
-- V2.5 sets portal token lifetime/scope and referrer policy after final hosting topology.
-- V2.7 selects a billing provider, if any, without changing entitlement interfaces.
+- V2.3 defines installment schedule change rules while retaining successful payments as the balance authority.
+- V2.4 validates delivery methods, recipient/address handling, and handoff evidence.
+- V2.5 decides whether negative stock is forbidden or permissioned as an audited exception.
+- V2.6 selects any messaging provider and callback verification scheme.
+- V2.7 sets portal token lifetime/scope and referrer policy after final hosting topology.
+- V2.9 selects a billing provider, if any, without changing entitlement interfaces.
 
 None of these deferred provider/product choices blocks the V2.1 production workspace.

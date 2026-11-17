@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -16,6 +16,7 @@ from app.services.auth_service import get_user_by_id
 async def get_current_user(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
     access_token: Annotated[str | None, Cookie(alias=ACCESS_COOKIE_NAME)] = None,
 ) -> User:
     if not access_token:
@@ -42,6 +43,20 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
+    if user.role != UserRole.SUPER_ADMIN:
+        from app.services.subscription_service import get_business_subscription_status
+
+        is_subscription_route = request.url.path.startswith(f"{settings.api_prefix}/subscription/")
+        is_session_route = request.url.path.endswith("/auth/me") or request.url.path.endswith(
+            "/auth/logout"
+        )
+        if not is_subscription_route and not is_session_route:
+            subscription = await get_business_subscription_status(session, user.business)
+            if subscription.required and not subscription.can_use_app:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Choose an active subscription plan before using the application.",
+                )
     return user
 
 

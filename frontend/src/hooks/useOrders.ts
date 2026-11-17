@@ -3,11 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as ordersApi from "../api/orders";
 import type {
   CreateOrderInput,
+  OrderDetail,
   OrderQueryParams,
   UpdateOrderInput,
   UpdateOrderStatusInput,
 } from "../types/order";
 import { invalidateDashboardQueries } from "../lib/dashboard-query";
+import type { FulfillmentActionInput, FulfillmentUpdateInput } from "../types/fulfillment";
 
 export const orderKeys = {
   lists: ["orders"] as const,
@@ -85,4 +87,38 @@ export function useUpdateOrderStatus(orderId: string) {
       invalidateDashboardQueries(queryClient);
     },
   });
+}
+
+function useFulfillmentMutation<TInput>(
+  orderId: string,
+  mutationFn: (payload: TInput) => Promise<OrderDetail>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: (order) => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.lists });
+      queryClient.invalidateQueries({ queryKey: orderKeys.customerOrders(order.customer.id) });
+      queryClient.setQueryData(orderKeys.detail(order.id), order);
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useUpdateOrderFulfillment(orderId: string) {
+  return useFulfillmentMutation(orderId, (payload: FulfillmentUpdateInput) =>
+    ordersApi.updateOrderFulfillment(orderId, payload),
+  );
+}
+
+export function useDispatchOrderFulfillment(orderId: string) {
+  return useFulfillmentMutation(orderId, (payload: FulfillmentActionInput) =>
+    ordersApi.dispatchOrderFulfillment(orderId, payload),
+  );
+}
+
+export function useCompleteOrderFulfillment(orderId: string) {
+  return useFulfillmentMutation(orderId, (payload: FulfillmentActionInput) =>
+    ordersApi.completeOrderFulfillment(orderId, payload),
+  );
 }

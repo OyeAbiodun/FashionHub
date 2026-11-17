@@ -18,8 +18,10 @@ class PlatformEmailConfigurationUpdate(BaseModel):
     security_mode: SmtpSecurityMode
     from_email: EmailStr
     from_name: str = Field(min_length=1, max_length=200)
+    support_email: EmailStr | None = None
+    support_whatsapp: str | None = Field(default=None, max_length=32)
 
-    @field_validator("smtp_host", "smtp_username", "from_name")
+    @field_validator("smtp_host", "smtp_username", "from_name", "support_whatsapp")
     @classmethod
     def reject_header_newlines(cls, value: str | None) -> str | None:
         if value is not None and ("\r" in value or "\n" in value):
@@ -40,6 +42,8 @@ class PlatformEmailConfigurationPublic(BaseModel):
     security_mode: SmtpSecurityMode = SmtpSecurityMode.STARTTLS
     from_email: str | None = None
     from_name: str = "FashionOS"
+    support_email: str | None = None
+    support_whatsapp: str | None = None
     configured: bool = False
     last_tested_at: datetime | None = None
     last_test_status: str | None = None
@@ -49,3 +53,8 @@ class PlatformEmailTestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     recipient: EmailStr
+
+
+class PlatformSupportContact(BaseModel):
+    support_email: EmailStr | None = None
+    support_whatsapp: str | None = None

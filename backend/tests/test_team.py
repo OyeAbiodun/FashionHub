@@ -1,7 +1,29 @@
+import re
+from urllib.parse import unquote
+
 import pytest
 from sqlalchemy import select
 
 from app.models.business import Business
+from app.services.email_service import capture_email_provider
+
+
+async def invite_and_accept(client, payload: dict) -> dict:
+    owner_cookies = dict(client.cookies)
+    invitation = await client.post("/api/v1/team", json=payload)
+    assert invitation.status_code == 201, invitation.text
+    message = next(item for item in capture_email_provider.messages if item.to == payload["email"])
+    match = re.search(r"token=([^\s&]+)", message.text)
+    assert match
+    accepted = await client.post(
+        "/api/v1/team/invitations/accept",
+        json={"token": unquote(match.group(1)), "password": "StaffSecret123!"},
+    )
+    assert accepted.status_code == 200, accepted.text
+    client.cookies.clear()
+    for name, value in owner_cookies.items():
+        client.cookies.set(name, value)
+    return accepted.json()["user"]
 
 
 @pytest.mark.asyncio
@@ -28,19 +50,16 @@ async def test_team_management_flow(client):
     assert team_list[0]["email"] == "adaowner@example.com"
 
     # 2. Add a new staff member (Tailor) with permissions
-    add_staff_res = await client.post(
-        "/api/v1/team",
-        json={
+    staff_data = await invite_and_accept(
+        client,
+        {
             "first_name": "Emeka",
             "last_name": "Tailor",
             "email": "emeka@example.com",
-            "password": "StaffSecret123!",
             "role": "STAFF",
             "permissions": ["orders:read", "measurements:write"],
         },
     )
-    assert add_staff_res.status_code == 201
-    staff_data = add_staff_res.json()
     assert staff_data["first_name"] == "Emeka"
     assert staff_data["role"] == "STAFF"
     assert "measurements:write" in staff_data["permissions"]
@@ -79,23 +98,20 @@ async def test_staff_limit_enforcement(client):
 
     # Lower max_staff_users to 1 in DB for testing
     async with session_factory() as session:
-        b_res = await session.execute(
-            select(Business).where(Business.name == "Small Studio")
-        )
+        b_res = await session.execute(select(Business).where(Business.name == "Small Studio"))
         b_obj = b_res.scalar_one()
         b_obj.max_staff_users = 1
         await session.commit()
 
-    # Attempting to add 2nd staff member when limit is 1 fails with 400
+    # Attempting to invite a second account when the owner uses the only slot fails.
     add_res = await client.post(
         "/api/v1/team",
         json={
             "first_name": "Extra",
             "last_name": "Staff",
             "email": "extrastaff@example.com",
-            "password": "StaffSecret123!",
             "role": "STAFF",
         },
     )
-    assert add_res.status_code == 400
+    assert add_res.status_code == 409
     assert "limit reached" in add_res.json()["detail"]

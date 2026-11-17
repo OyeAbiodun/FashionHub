@@ -46,6 +46,19 @@ class TaskUpdate(BaseModel):
     due_at: datetime | None = None
 
 
+class TaskCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class TaskCommentPublic(BaseModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    author_id: uuid.UUID
+    author_name: str
+    body: str
+    created_at: datetime
+
+
 class TaskListResponse(BaseModel):
     items: list[TaskPublic]
     total: int
